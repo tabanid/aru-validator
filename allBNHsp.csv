@@ -1,0 +1,339 @@
+spName,spNameLB,spcdBN,spcdHE,Group,nsDNR1
+Canada Goose,Branta canadensis,cangoo,CANG,"Ducks, Geese & Swans",Y
+Wood Duck,Aix sponsa,wooduc,WODU,"Ducks, Geese & Swans",Y
+Blue-winged Teal,Spatula discors,buwtea,BWTE,"Ducks, Geese & Swans",N
+Northern Shoveler,Spatula clypeata,norsho,NSHO,"Ducks, Geese & Swans",N
+Gadwall,Mareca strepera,gadwal,GADW,"Ducks, Geese & Swans",N
+American Wigeon,Mareca americana,amewig,AMWI,"Ducks, Geese & Swans",N
+Mallard,Anas platyrhynchos,mallar3,MALL,"Ducks, Geese & Swans",Y
+Northern Pintail,Anas acuta,norpin,NOPI,"Ducks, Geese & Swans",N
+Green-winged Teal,Anas crecca,gnwtea,GWTE,"Ducks, Geese & Swans",N
+Ring-necked Duck,Aythya collaris,rinduc,RNDU,"Ducks, Geese & Swans",N
+Common Goldeneye,Bucephala clangula,comgol,COGO,"Ducks, Geese & Swans",N
+Hooded Merganser,Lophodytes cucullatus,hoomer,HOME,"Ducks, Geese & Swans",N
+Common Merganser,Mergus merganser,commer,COME,"Ducks, Geese & Swans",N
+Ruddy Duck,Oxyura jamaicensis,rudduc,RUDU,"Ducks, Geese & Swans",N
+Ruffed Grouse,Bonasa umbellus,rufgro,RUGR,Gamebirds,Y
+Spruce Grouse,Canachites canadensis,sprgro,SPGR,Gamebirds,Y
+Ring-necked Pheasant,Phasianus colchicus,rinphe,RNEP,Gamebirds,Y
+Pied-billed Grebe,Podilymbus podiceps,pibgre,PBGR,Grebes,N
+Rock Pigeon,Columba livia,rocpig,ROPI,Pigeons & Doves,N
+Eurasian Collared-Dove,Streptopelia decaocto,eucdov,EUCD,Pigeons & Doves,N
+Mourning Dove,Zenaida macroura,moudov,MODO,Pigeons & Doves,Y
+Yellow-billed Cuckoo,Coccyzus americanus,yebcuc,YBCU,Cuckoos,N
+Black-billed Cuckoo,Coccyzus erythropthalmus,bkbcuc,BBCU,Cuckoos,N
+Common Nighthawk,Chordeiles minor,comnig,CONI,Nightjars,Y
+Chuck-will's-widow,Antrostomus carolinensis,chwwid,CWWI,Nightjars,N
+Eastern Whip-poor-will,Antrostomus vociferus,easwpw1,EWPW,Nightjars,N
+Chimney Swift,Chaetura pelagica,chiswi,CHSW,Swifts,Y
+Ruby-throated Hummingbird,Archilochus colubris,rthhum,RTHU,Hummingbirds,Y
+King Rail,Rallus elegans,kinrai4,KIRA,Rails & Coots,N
+Clapper Rail,Rallus crepitans,clarai11,CLRA,Rails & Coots,N
+Virginia Rail,Rallus limicola,virrai,VIRA,Rails & Coots,N
+Sora,Porzana carolina,sora,SORA,Rails & Coots,Y
+Common Gallinule,Gallinula galeata,comgal1,COGA,Rails & Coots,N
+Yellow Rail,Coturnicops noveboracensis,yelrai,YERA,Rails & Coots,N
+Killdeer,Charadrius vociferus,killde,KILL,Shorebirds,Y
+Upland Sandpiper,Bartramia longicauda,uplsan,UPSA,Shorebirds,N
+Least Sandpiper,Calidris minutilla,leasan,LESA,Shorebirds,N
+American Woodcock,Scolopax minor,amewoo,AMWO,Shorebirds,Y
+Wilson's Snipe,Gallinago delicata,wilsni1,WISN,Shorebirds,Y
+Spotted Sandpiper,Actitis macularius,sposan,SPSA,Shorebirds,Y
+Solitary Sandpiper,Tringa solitaria,solsan,SOSA,Shorebirds,N
+Greater Yellowlegs,Tringa melanoleuca,greyel,GRYE,Shorebirds,N
+Willet,Tringa semipalmata,willet1,WILL,Shorebirds,Y
+Lesser Yellowlegs,Tringa flavipes,lesyel,LEYE,Shorebirds,N
+Ring-billed Gull,Larus delawarensis,ribgul,RBGU,Gulls & Terns,N
+Herring Gull,Larus argentatus,hergul,HERG,Gulls & Terns,N
+Great Black-backed Gull,Larus marinus,gbbgul,GBBG,Gulls & Terns,N
+Caspian Tern,Hydroprogne caspia,caster1,CATE,Gulls & Terns,N
+Black Tern,Chlidonias niger,blkter,BLTE,Gulls & Terns,N
+Common Tern,Sterna hirundo,comter,COTE,Gulls & Terns,N
+Arctic Tern,Sterna paradisaea,arcter,ARTE,Gulls & Terns,N
+Forster's Tern,Sterna forsteri,forter,FOTE,Gulls & Terns,N
+Red-throated Loon,Gavia stellata,retloo,RTLO,Loons,N
+Common Loon,Gavia immer,comloo,COLO,Loons,Y
+Double-crested Cormorant,Nannopterum auritum,doccor,DCCO,Cormorants,N
+American Bittern,Botaurus lentiginosus,amebit,AMBI,Herons,Y
+Least Bittern,Ixobrychus exilis,leabit,LEBI,Herons,N
+Great Blue Heron,Ardea herodias,grbher3,GBHE,Herons,N
+Green Heron,Butorides virescens,grnher,GRHE,Herons,N
+Osprey,Pandion haliaetus,osprey,OSPR,Hawks & Eagles,Y
+Northern Harrier,Circus hudsonius,norhar2,NOHA,Hawks & Eagles,Y
+Sharp-shinned Hawk,Accipiter striatus,shshaw,SSHA,Hawks & Eagles,Y
+Cooper's Hawk,Accipiter cooperii,coohaw,COHA,Hawks & Eagles,Y
+Bald Eagle,Haliaeetus leucocephalus,baleag,BAEA,Hawks & Eagles,Y
+Red-shouldered Hawk,Buteo lineatus,reshaw,RSHA,Hawks & Eagles,N
+Broad-winged Hawk,Buteo platypterus,brwhaw,BWHA,Hawks & Eagles,Y
+Red-tailed Hawk,Buteo jamaicensis,rethaw,RTHA,Hawks & Eagles,Y
+Eastern Screech-Owl,Megascops asio,easowl1,EASO,Owls,N
+Great Horned Owl,Bubo virginianus,grhowl,GHOW,Owls,Y
+Northern Hawk Owl,Surnia ulula,nohowl,NHOW,Owls,N
+Barred Owl,Strix varia,brdowl,BADO,Owls,Y
+Long-eared Owl,Asio otus,loeowl,LEOW,Owls,N
+Short-eared Owl,Asio flammeus,sheowl,SEOW,Owls,N
+Boreal Owl,Aegolius funereus,borowl,BOOW,Owls,N
+Northern Saw-whet Owl,Aegolius acadicus,nswowl,NSWO,Owls,Y
+Belted Kingfisher,Megaceryle alcyon,belkin1,BEKI,Kingfishers,Y
+Yellow-bellied Sapsucker,Sphyrapicus varius,yebsap,YBSA,Woodpeckers,Y
+Red-headed Woodpecker,Melanerpes erythrocephalus,rehwoo,RHWO,Woodpeckers,N
+Red-bellied Woodpecker,Melanerpes carolinus,rebwoo,RBWO,Woodpeckers,N
+American Three-toed Woodpecker,Picoides dorsalis,attwoo1,ATTW,Woodpeckers,N
+Black-backed Woodpecker,Picoides arcticus,bkbwoo,BBWO,Woodpeckers,Y
+Downy Woodpecker,Dryobates pubescens,dowwoo,DOWO,Woodpeckers,Y
+Hairy Woodpecker,Dryobates villosus,haiwoo,HAWO,Woodpeckers,Y
+Pileated Woodpecker,Dryocopus pileatus,pilwoo,PIWO,Woodpeckers,Y
+Northern Flicker,Colaptes auratus,norfli,NOFL,Woodpeckers,Y
+American Kestrel,Falco sparverius,amekes,AMKE,Falcons,N
+Merlin,Falco columbarius,merlin,MERL,Falcons,Y
+Peregrine Falcon,Falco peregrinus,perfal,PEFA,Falcons,N
+Olive-sided Flycatcher,Contopus cooperi,olsfly,OSFL,Flycatchers,Y
+Western Wood-Pewee,Contopus sordidulus,wewpew,WEWP,Flycatchers,N
+Eastern Wood-Pewee,Contopus virens,eawpew,EAWP,Flycatchers,Y
+Yellow-bellied Flycatcher,Empidonax flaviventris,yebfly,YBFL,Flycatchers,Y
+Acadian Flycatcher,Empidonax virescens,acafly,ACFL,Flycatchers,N
+Alder Flycatcher,Empidonax alnorum,aldfly,ALFL,Flycatchers,Y
+Willow Flycatcher,Empidonax traillii,wilfly,WIFL,Flycatchers,N
+Least Flycatcher,Empidonax minimus,leafly,LEFL,Flycatchers,Y
+Eastern Phoebe,Sayornis phoebe,easpho,EAPH,Flycatchers,Y
+Great Crested Flycatcher,Myiarchus crinitus,grcfly,GCFL,Flycatchers,Y
+Eastern Kingbird,Tyrannus tyrannus,easkin,EAKI,Flycatchers,Y
+White-eyed Vireo,Vireo griseus,whevir,WEVI,Vireos,N
+Bell's Vireo,Vireo bellii,belvir,BEVI,Vireos,N
+Yellow-throated Vireo,Vireo flavifrons,yetvir,YTVI,Vireos,N
+Blue-headed Vireo,Vireo solitarius,buhvir,BHVI,Vireos,Y
+Philadelphia Vireo,Vireo philadelphicus,phivir,PHVI,Vireos,N
+Warbling Vireo,Vireo gilvus,warvir,WAVI,Vireos,N
+Red-eyed Vireo,Vireo olivaceus,reevir1,REVI,Vireos,Y
+Canada Jay,Perisoreus canadensis,gryjay,CAJA,Jays & Crows,Y
+Blue Jay,Cyanocitta cristata,blujay,BLJA,Jays & Crows,Y
+American Crow,Corvus brachyrhynchos,amecro,AMCR,Jays & Crows,Y
+Fish Crow,Corvus ossifragus,fiscro,FICR,Jays & Crows,N
+Common Raven,Corvus corax,comrav,CORA,Jays & Crows,Y
+Black-capped Chickadee,Poecile atricapillus,bkcchi,BCCH,Chickadees & Titmice,Y
+Boreal Chickadee,Poecile hudsonicus,borchi2,BOCH,Chickadees & Titmice,Y
+Tufted Titmouse,Baeolophus bicolor,tuftit,TUTI,Chickadees & Titmice,N
+Northern Rough-winged Swallow,Stelgidopteryx serripennis,nrwswa,NRWS,Swallows,N
+Purple Martin,Progne subis,purmar,PUMA,Swallows,N
+Tree Swallow,Tachycineta bicolor,treswa,TRES,Swallows,Y
+Bank Swallow,Riparia riparia,banswa,BANS,Swallows,N
+Barn Swallow,Hirundo rustica,barswa,BARS,Swallows,N
+Cliff Swallow,Petrochelidon pyrrhonota,cliswa,CLSW,Swallows,N
+Ruby-crowned Kinglet,Corthylio calendula,ruckin,RCKI,Kinglets,Y
+Golden-crowned Kinglet,Regulus satrapa,gockin,GCKI,Kinglets,Y
+Red-breasted Nuthatch,Sitta canadensis,rebnut,RBNU,Nuthatches,Y
+White-breasted Nuthatch,Sitta carolinensis,whbnut,WBNU,Nuthatches,Y
+Brown Creeper,Certhia americana,brncre,BRCR,Creepers,Y
+Blue-gray Gnatcatcher,Polioptila caerulea,buggna,BGGN,Gnatcatchers,N
+House Wren,Troglodytes aedon,houwre,HOWR,Wrens,N
+Winter Wren,Troglodytes hiemalis,winwre3,WIWR,Wrens,Y
+Sedge Wren,Cistothorus stellaris,sedwre1,SEWR,Wrens,N
+Marsh Wren,Cistothorus palustris,marwre,MAWR,Wrens,N
+Carolina Wren,Thryothorus ludovicianus,carwre,CARW,Wrens,N
+European Starling,Sturnus vulgaris,eursta,EUST,Starlings,Y
+Gray Catbird,Dumetella carolinensis,grycat,GRCA,Mockingbirds & Thrashers,Y
+Brown Thrasher,Toxostoma rufum,brnthr,BRTH,Mockingbirds & Thrashers,N
+Eastern Bluebird,Sialia sialis,easblu,EABL,Thrushes,N
+Veery,Catharus fuscescens,veery,VEER,Thrushes,Y
+Bicknell’s Thrush,Catharus bicknelli,bicthr,BITH,Thrushes,Y
+Gray-cheeked Thrush,Catharus minimus,gycthr,GCTH,Thrushes,N
+Swainson's Thrush,Catharus ustulatus,swathr,SWTH,Thrushes,Y
+Hermit Thrush,Catharus guttatus,herthr,HETH,Thrushes,Y
+Wood Thrush,Hylocichla mustelina,woothr,WOTH,Thrushes,N
+American Robin,Turdus migratorius,amerob,AMRO,Thrushes,Y
+Bohemian Waxwing,Bombycilla garrulus,bohwax,BOWA,Waxwings,N
+Cedar Waxwing,Bombycilla cedrorum,cedwax,CEDW,Waxwings,Y
+House Sparrow,Passer domesticus,houspa,HOSP,Old World Sparrows,N
+American Pipit,Anthus rubescens,amepip,AMPI,Pipits,N
+Evening Grosbeak,Coccothraustes vespertinus,evegro,EVGR,Finches,Y
+Pine Grosbeak,Pinicola enucleator,pingro,PIGR,Finches,Y
+House Finch,Haemorhous mexicanus,houfin,HOFI,Finches,N
+Purple Finch,Haemorhous purpureus,purfin,PUFI,Finches,Y
+Red Crossbill,Loxia curvirostra,redcro,RECR,Finches,Y
+White-winged Crossbill,Loxia leucoptera,whwcro,WWCR,Finches,Y
+Pine Siskin,Spinus pinus,pinsis,PISI,Finches,Y
+American Goldfinch,Spinus tristis,amegfi,AGOL,Finches,Y
+Snow Bunting,Plectrophenax nivalis,snobun,SNBU,Sparrows,N
+Grasshopper Sparrow,Ammodramus savannarum,graspa,GRSP,Sparrows,N
+Chipping Sparrow,Spizella passerina,chispa,CHSP,Sparrows,Y
+Clay-colored Sparrow,Spizella pallida,clcspa,CCSP,Sparrows,N
+Field Sparrow,Spizella pusilla,fiespa,FISP,Sparrows,N
+Lark Sparrow,Chondestes grammacus,larspa,LASP,Sparrows,N
+American Tree Sparrow,Spizelloides arborea,amtspa,ATSP,Sparrows,N
+Fox Sparrow,Passerella iliaca,foxspa,FOSP,Sparrows,Y
+Dark-eyed Junco,Junco hyemalis,daejun,DEJU,Sparrows,Y
+White-throated Sparrow,Zonotrichia albicollis,whtspa,WTSP,Sparrows,Y
+Vesper Sparrow,Pooecetes gramineus,vesspa,VESP,Sparrows,N
+LeConte's Sparrow,Ammospiza leconteii,lecspa,LCSP,Sparrows,N
+Nelson's Sparrow,Ammospiza nelsoni,nstspa,NESP,Sparrows,Y
+Savannah Sparrow,Passerculus sandwichensis,savspa,SAVS,Sparrows,Y
+Henslow's Sparrow,Centronyx henslowii,henspa,HESP,Sparrows,N
+Song Sparrow,Melospiza melodia,sonspa,SOSP,Sparrows,Y
+Lincoln's Sparrow,Melospiza lincolnii,linspa,LISP,Sparrows,Y
+Swamp Sparrow,Melospiza georgiana,swaspa,SWSP,Sparrows,Y
+Eastern Towhee,Pipilo erythrophthalmus,eastow,EATO,Sparrows,N
+Yellow-breasted Chat,Icteria virens,yebcha,YBCH,Chats,N
+Bobolink,Dolichonyx oryzivorus,boboli,BOBO,Blackbirds & Orioles,Y
+Eastern Meadowlark,Sturnella magna,easmea,EAME,Blackbirds & Orioles,N
+Orchard Oriole,Icterus spurius,orcori,OROR,Blackbirds & Orioles,N
+Baltimore Oriole,Icterus galbula,balori,BAOR,Blackbirds & Orioles,N
+Red-winged Blackbird,Agelaius phoeniceus,rewbla,RWBL,Blackbirds & Orioles,Y
+Brown-headed Cowbird,Molothrus ater,bnhcow,BHCO,Blackbirds & Orioles,N
+Rusty Blackbird,Euphagus carolinus,rusbla,RUBL,Blackbirds & Orioles,Y
+Common Grackle,Quiscalus quiscula,comgra,COGR,Blackbirds & Orioles,Y
+Ovenbird,Seiurus aurocapilla,ovenbi1,OVEN,Warblers,Y
+Louisiana Waterthrush,Parkesia motacilla,louwat,LOWA,Warblers,N
+Northern Waterthrush,Parkesia noveboracensis,norwat,NOWA,Warblers,Y
+Golden-winged Warbler,Vermivora chrysoptera,gowwar,GWWA,Warblers,N
+Blue-winged Warbler,Vermivora cyanoptera,buwwar,BWWA,Warblers,N
+Black-and-white Warbler,Mniotilta varia,bawwar,BAWW,Warblers,Y
+Prothonotary Warbler,Protonotaria citrea,prowar,PROW,Warblers,N
+Tennessee Warbler,Leiothlypis peregrina,tenwar,TEWA,Warblers,Y
+Orange-crowned Warbler,Leiothlypis celata,orcwar,OCWA,Warblers,N
+Nashville Warbler,Leiothlypis ruficapilla,naswar,NAWA,Warblers,Y
+Mourning Warbler,Geothlypis philadelphia,mouwar,MOWA,Warblers,Y
+Kentucky Warbler,Geothlypis formosa,kenwar,KEWA,Warblers,N
+Common Yellowthroat,Geothlypis trichas,comyel,COYE,Warblers,Y
+Hooded Warbler,Setophaga citrina,hoowar,HOWA,Warblers,N
+American Redstart,Setophaga ruticilla,amered,AMRE,Warblers,Y
+Cape May Warbler,Setophaga tigrina,camwar,CMWA,Warblers,Y
+Cerulean Warbler,Setophaga cerulea,cerwar,CERW,Warblers,N
+Northern Parula,Setophaga americana,norpar,NOPA,Warblers,Y
+Magnolia Warbler,Setophaga magnolia,magwar,MAWA,Warblers,Y
+Bay-breasted Warbler,Setophaga castanea,babwar,BBWA,Warblers,Y
+Blackburnian Warbler,Setophaga fusca,bkbwar,BLBW,Warblers,Y
+Yellow Warbler,Setophaga petechia,yelwar,YEWA,Warblers,Y
+Chestnut-sided Warbler,Setophaga pensylvanica,chswar,CSWA,Warblers,Y
+Blackpoll Warbler,Setophaga striata,bkpwar,BLPW,Warblers,Y
+Black-throated Blue Warbler,Setophaga caerulescens,btbwar,BTBW,Warblers,Y
+Palm Warbler,Setophaga palmarum,palwar,PAWA,Warblers,Y
+Pine Warbler,Setophaga pinus,pinwar,PIWA,Warblers,Y
+Yellow-rumped Warbler,Setophaga coronata,yerwar,YRWA,Warblers,Y
+Yellow-throated Warbler,Setophaga dominica,yetwar,YTWA,Warblers,N
+Prairie Warbler,Setophaga discolor,prawar,PRAW,Warblers,N
+Black-throated Green Warbler,Setophaga virens,btnwar,BTNW,Warblers,Y
+Canada Warbler,Cardellina canadensis,canwar,CAWA,Warblers,Y
+Wilson's Warbler,Cardellina pusilla,wlswar,WIWA,Warblers,Y
+Worm-eating Warbler,Helmitheros vermivorum,woewar1,WEWA,Warblers,N
+Summer Tanager,Piranga rubra,sumtan,SUTA,Tanagers,N
+Scarlet Tanager,Piranga olivacea,scatan,SCTA,Tanagers,N
+Northern Cardinal,Cardinalis cardinalis,norcar,NOCA,Cardinals & Grosbeaks,Y
+Indigo Bunting,Passerina cyanea,indbun,INBU,Cardinals & Grosbeaks,N
+Redpoll,Acanthis flammea,NA,REDP,Finches,N
+Rock Ptarmigan,NA,NA,ROPT,Gamebirds,N
+Western Flycatcher,Empidonax difficilis,NA,WEFL,Flycatchers,N
+American Avocet,NA,ameavo,AMAV,NA,N
+American Black Duck,NA,ambduc,ABDU,NA,N
+American Coot,NA,amecoo,AMCO,NA,N
+American Dipper,NA,amedip,AMDI,NA,N
+American Golden-Plover,NA,amgplo,AMGP,NA,N
+Anna's Hummingbird,NA,annhum,ANHU,NA,N
+Baird's Sparrow,NA,baispa,BAIS,NA,N
+Baird's Sandpiper,NA,baisan,BASA,NA,N
+Band-tailed Pigeon,NA,batpig1,BTPI,NA,N
+Barn Owl,NA,brnowl,BANO,NA,N
+Bewick's Wren,NA,bewwre,BEWR,NA,N
+Black Oystercatcher,NA,blkoys,BLOY,NA,N
+Black Rail,NA,blkrai,BLRA,NA,N
+Black Turnstone,NA,blktur,BLTU,NA,N
+Black-bellied Plover,NA,bkbplo,BBPL,NA,N
+Black-billed Magpie,NA,bkbmag1,BBMA,NA,N
+Black-crowned Night Heron,NA,bcnher,BCNH,NA,N
+Black-headed Grosbeak,NA,bkhgro,BHGR,NA,N
+Black-throated Gray Warbler,NA,btywar,BTGW,NA,N
+Bonaparte's Gull,NA,bongul,BOGU,NA,N
+Brant,NA,brant,BRAN,NA,N
+Brewer's Blackbird,NA,brebla,BRBL,NA,N
+Brewer's Sparrow,NA,brespa,BRSP,NA,N
+Bufflehead,NA,buffle,BUFF,NA,N
+Bullock's Oriole,NA,bulori,BUOR,NA,N
+Bushtit,NA,bushti,BUSH,NA,N
+California Gull,NA,calgul,CAGU,NA,N
+California Quail,NA,calqua,CAQU,NA,N
+Cassin's Finch,NA,casfin,CAFI,NA,N
+Cassin's Vireo,NA,casvir,CAVI,NA,N
+Chestnut-backed Chickadee,NA,chbchi,CBCH,NA,N
+Chestnut-collared Longspur,NA,chclon,CCLO,NA,N
+Clark's Grebe,NA,claunk,CLGR,NA,N
+Clark's Nutcracker,NA,clanut,CLNU,NA,N
+Common Murre,NA,commur,COMU,NA,N
+Common Poorwill,NA,compoo,COPO,NA,N
+Connecticut Warbler,NA,conwar,CONW,NA,N
+Dickcissel,NA,dickci,DICK,NA,N
+Dunlin,NA,dunlin,DUNL,NA,N
+Dusky Flycatcher,NA,dusfly,DUFL,NA,N
+Eared Grebe,NA,eargre,EAGR,NA,N
+Franklin's Gull,NA,fragul,FRGU,NA,N
+Glaucous-winged Gull,NA,glwgul,GWGU,NA,N
+Golden Eagle,NA,goleag,GOEA,NA,N
+Golden-crowned Sparrow,NA,gocspa,GCSP,NA,N
+Gray Flycatcher,NA,gryfly,GRFL,NA,N
+Gray Partridge,NA,grypar,GRAP,NA,N
+Great Egret,NA,greegr,GREG,NA,N
+Great Gray Owl,NA,grgowl,GGOW,NA,N
+Greater White-fronted Goose,NA,gwfgoo,GWFG,NA,N
+Hammond's Flycatcher,NA,hamfly,HAFL,NA,N
+Harris's Sparrow,NA,harspa,HASP,NA,N
+Horned Grebe,NA,horgre,HOGR,NA,N
+Horned Lark,NA,horlar,HOLA,NA,N
+Kirtland's Warbler,NA,kirwar,KIWA,NA,N
+Lapland Longspur,NA,laplon,LALO,NA,N
+Lazuli Bunting,NA,lazbun,LAZB,NA,N
+Lesser Black-backed Gull,NA,lbbgul,LBBG,NA,N
+Loggerhead Shrike,NA,logshr,LOSH,NA,N
+Long-billed Curlew,NA,lobcur,LBCU,NA,N
+Long-billed Dowitcher,NA,lobdow,LBDO,NA,N
+Long-tailed Duck,NA,lotduc,LTDU,NA,N
+MacGillivray's Warbler,NA,macwar,MGWA,NA,N
+Marbled Godwit,NA,margod,MAGO,NA,N
+Marbled Murrelet,NA,marmur,MAMU,NA,N
+Mountain Bluebird,NA,moublu,MOBL,NA,N
+Mountain Chickadee,NA,mouchi,MOCH,NA,N
+Mute Swan,NA,mutswa,MUSW,NA,N
+American Goshawk,NA,norgos,AGOS,NA,Y
+Northern Pygmy-Owl,NA,nopowl,NOPO,NA,N
+Northern Shrike,NA,norshr4,NSHR,NA,N
+Pacific Wren,NA,pacwre1,PAWR,NA,N
+Pectoral Sandpiper,NA,pecsan,PESA,NA,N
+Redhead,NA,redhea,REDH,NA,N
+Red-breasted Sapsucker,NA,rebsap,RBSA,NA,N
+Red-naped Sapsucker,NA,rensap,RNSA,NA,N
+Red-necked Grebe,NA,rengre,RNGR,NA,N
+Red-necked Phalarope,NA,renpha,RNPH,NA,N
+Rock Wren,NA,rocwre,ROWR,NA,N
+Rose-breasted Grosbeak,NA,robgro,RBGR,NA,Y
+Rough-legged Hawk,NA,rolhaw,RLHA,NA,N
+Ruddy Turnstone,NA,rudtur,RUTU,NA,N
+Rufous Hummingbird,NA,rufhum,RUHU,NA,N
+Sanderling,NA,sander,SAND,NA,N
+Sandhill Crane,NA,sancra,SACR,NA,N
+Say's Phoebe,NA,saypho,SAPH,NA,N
+Semipalmated Plover,NA,semplo,SEPL,NA,N
+Semipalmated Sandpiper,NA,semsan,SESA,NA,N
+Sharp-tailed Grouse,NA,shtgro,STGR,NA,N
+Short-billed Dowitcher,NA,shbdow,SBDO,NA,N
+Short-billed Gull,NA,mewgul2,SBIG,NA,N
+Snow Goose,NA,snogoo,SNGO,NA,N
+Spotted Towhee,NA,spotow,SPTO,NA,N
+Sprague's Pipit,NA,sprpip,SPPI,NA,N
+Steller's Jay,NA,stejay,STJA,NA,N
+Swainson's Hawk,NA,swahaw,SWHA,NA,N
+Thick-billed Longspur,NA,mcclon,TBLO,NA,N
+Townsend's Solitaire,NA,towsol,TOSO,NA,N
+Townsend's Warbler,NA,towwar,TOWA,NA,N
+Trumpeter Swan,NA,truswa,TRUS,NA,N
+Tundra Swan,NA,tunswa,TUSW,NA,N
+Varied Thrush,NA,varthr,VATH,NA,N
+Vaux's Swift,NA,vauswi,VASW,NA,N
+Violet-green Swallow,NA,vigswa,VGSW,NA,N
+Western Grebe,NA,wesgre,WEGR,NA,N
+Western Kingbird,NA,weskin,WEKI,NA,N
+Western Meadowlark,NA,wesmea,WEME,NA,N
+Western Tanager,NA,westan,WETA,NA,N
+Whimbrel,NA,whimbr,WHIM,NA,N
+White-crowned Sparrow,NA,whcspa,WCSP,NA,N
+White-rumped Sandpiper,NA,whrsan,WRSA,NA,N
+Wild Turkey,NA,wiltur,WITU,NA,N
+Willow Ptarmigan,NA,wilpta,WIPT,NA,N
+Wilson's Phalarope,NA,wilpha,WIPH,NA,N
+Yellow-headed Blackbird,NA,yehbla,YHBL,NA,N
