@@ -152,6 +152,12 @@ ui <- page_sidebar(
         // Any other place you can type (validator name, DB path, number boxes, the
         // select search boxes): the key is text, never a shortcut.
         var el = document.activeElement;
+        // A dropdown's search box: text only while its list is open. Closed, it gives
+        // the keys back (it keeps the cursor after a pick, even of the same value).
+        if (el && el.id && /-selectized$/.test(el.id)) {
+          if ($(el).closest('.selectize-input').hasClass('dropdown-active')) return;
+          el.blur(); el = document.body;
+        }
         if (el && (el.isContentEditable || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' ||
             (el.tagName === 'INPUT' && /^(text|search|number|email|password|url|tel|)$/i.test(el.type || '')))) return;
         if (e.altKey) {
