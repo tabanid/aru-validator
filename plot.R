@@ -2,7 +2,8 @@
 # plot.R  —  Sidebar plots.
 #   classification_plot_pY()  F1: p(Y) vs AI-score scatter + logistic fit
 #                                 (lifted from the old tool's classification_plot)
-#   temporal_tiles()          F2: compact unit x time_period status grid
+#   temporal_tiles()          F2: compact unit x time_period status grid (borrowed
+#                                 = present via another clip's other=)
 #                                 (fixed grain — whatever the DB carries)
 # =============================================================================
 
@@ -96,8 +97,9 @@ temporal_tiles <- function(groups, unit_order = NULL, active = NULL) {
   units <- if (!is.null(unit_order)) unit_order else sort(unique(d$unit))
   d$unit   <- factor(d$unit, levels = units)
   d$period <- factor(d$period, levels = sort(unique(d$period)))
-  d$status <- factor(d$status, levels = c("unexamined", "examined", "yes"))
-  cols <- c(unexamined = "#cccccc", examined = "#dc3545", yes = "#28a745")
+  d$status <- factor(d$status, levels = c("unexamined", "examined", "yes", "borrowed"))
+  cols <- c(unexamined = "#cccccc", examined = "#dc3545", yes = "#28a745",
+            borrowed = "#17a2b8")   # present, heard in another species' clip (other=)
 
   n_periods <- nlevels(d$period)
   brk <- levels(d$period)

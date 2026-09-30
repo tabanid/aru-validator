@@ -30,6 +30,19 @@ local({
   source(hit[1], local = FALSE)
 })
 
+# ---- shared/other.R: the other= reader and period_key, one copy with R6 ----
+# harvest_other() (read-only), period_key(), OTHER_DONOR_MODES, OTHER_LINE_RE. Found
+# like codes.R; deploy.sh puts other.R beside the app.
+local({
+  cands <- c("other.R", "../../shared/other.R", "shared/other.R",
+             file.path(Sys.getenv("ARU_REPO", unset = ""), "shared", "other.R"))
+  hit <- cands[nzchar(cands) & file.exists(cands)]
+  if (!length(hit))
+    stop("shared/other.R not found; looked in: ", paste(cands, collapse = ", "),
+         "\nRun from the app folder, the repo root, or set ARU_REPO.")
+  source(hit[1], local = FALSE)
+})
+
 # Display colour per code, keyed by the shared names (a code added or dropped in
 # codes.R fails here, not silently in the UI).
 CODE_COLOUR <- c(Y = "#4caf50", N = "#dc3545", O = "#2196f3",   # code-map
@@ -183,9 +196,10 @@ load_group_clips <- function(vdb, unit, time_period) {
 
 # View: the single highest-scoring still-unexamined clip from each cell that has
 # no confirmed Y yet, score-ordered. Validating these resolves the most cells per
-# look. Uses a window function (SQLite >= 3.25, bundled with RSQLite).
-load_best_per_cell <- function(vdb) {
-  dbGetQuery(vdb$conn, paste0(
+# look. Uses a window function (SQLite >= 3.25, bundled with RSQLite). `exclude`:
+# cells (unit, time_period) already resolved by a borrowed other= detection.
+load_best_per_cell <- function(vdb, exclude = NULL) {
+  df <- dbGetQuery(vdb$conn, paste0(
     "WITH resolved AS (
        SELECT DISTINCT unit, time_period FROM clips WHERE ", SQL_IS_DETECTION, "
      ),
@@ -200,6 +214,12 @@ load_best_per_cell <- function(vdb) {
          AND (c.classified IS NULL OR c.classified = 0)
      )
      SELECT * FROM ranked WHERE rn = 1 ORDER BY score DESC"))
+  if (!is.null(exclude) && nrow(exclude) && nrow(df)) {
+    drop <- paste(df$unit, df$time_period, sep = "\r") %in%
+            paste(exclude$unit, exclude$time_period, sep = "\r")
+    df <- df[!drop, , drop = FALSE]; rownames(df) <- NULL
+  }
+  df
 }
 
 # View (brief F4): every clip from one unit, all weeks, highest score first, so one
@@ -285,7 +305,7 @@ save_note <- function(vdb, sample_id, notes) {
 # Species heard in a clip besides the target, kept in `notes` as a first line
 # `other=BTNW,NAWA`, then the free-text comment (VALIDATION_TOOL_CONTRACT.md, notes).
 # Only a first line matching NOTES_OTHER_RE is read as codes; anything else is free text.
-NOTES_OTHER_RE <- "^other=[A-Z0-9-]+(,[A-Z0-9-]+)*$"
+NOTES_OTHER_RE <- OTHER_LINE_RE   # shared/other.R: the same pattern R6 reads
 
 #' Codes typed in the Other species box -> clean vector: upper-cased, split on spaces,
 #' commas or semicolons, characters outside A-Z 0-9 - dropped, de-duplicated, the
@@ -369,13 +389,129 @@ derive_groups <- function(vdb) {
 }
 
 #' Occupancy stop rule (contract §5): one Y resolves a unit x time_period cell;
+#' so does a borrowed other= detection (n_borrowed, from apply_borrowed());
 #' a cell worked to the bottom with no Y is an absence.
 group_complete <- function(group_row) {
   if (group_row$n_yes > 0)
     return(list(complete = TRUE, reason = "resolved_by_Y"))
+  if (isTRUE(group_row$n_borrowed > 0))
+    return(list(complete = TRUE, reason = "resolved_by_other"))
   if (group_row$n_examined >= group_row$n_total)
     return(list(complete = TRUE, reason = "examined_no_Y_absence"))
   list(complete = FALSE, reason = NA_character_)
+}
+
+# ---- borrowed other= detections (live surfacing, Sample 2 only) ---------------
+# A species named in another clip's other= line (any DB under the index folder,
+# calibration or occupancy: OTHER_DONOR_MODES) is present in that clip's unit x
+# occasion. In occupancy mode the app shows such cells of the open species as
+# resolved and skips them. Read-only: nothing here writes to any DB. R6 does the
+# authoritative harvest with the same harvest_other().
+
+#' The folder whose DBs feed the index: a scanned folder, or an opened DB's folder;
+#' a folder named `dbs` (the <project>/<sampleN>/dbs layout) steps up to <project>,
+#' so Sample 1 and Sample 2 DBs are both reached.
+other_index_root <- function(path) {
+  if (is.null(path) || !nzchar(path)) return(NULL)
+  d <- if (dir.exists(path)) path else dirname(path)
+  d <- normalizePath(d, mustWork = FALSE)
+  if (identical(basename(d), "dbs")) d <- dirname(dirname(d))
+  d
+}
+
+#' Validator of each index row (approximate): in the donor DB's validation_sessions,
+#' the latest session started at or before the clip's classified_at. NA if unknown.
+.other_validators <- function(idx) {
+  read_sessions <- function(p) {
+    con <- DBI::dbConnect(RSQLite::SQLite(), p, flags = RSQLite::SQLITE_RO, synchronous = NULL)
+    on.exit(DBI::dbDisconnect(con))
+    if ("validation_sessions" %in% DBI::dbListTables(con))
+      DBI::dbGetQuery(con, "SELECT validator, session_start FROM validation_sessions") else NULL
+  }
+  out <- rep(NA_character_, nrow(idx))
+  for (p in unique(idx$source_db)) {
+    vs <- tryCatch(read_sessions(p), error = function(e) NULL)
+    if (is.null(vs) || !nrow(vs)) next
+    vs <- vs[order(vs$session_start), , drop = FALSE]
+    for (i in which(idx$source_db == p & !is.na(idx$classified_at))) {
+      j <- which(vs$session_start <= idx$classified_at[i])
+      if (length(j)) out[i] <- vs$validator[max(j)]
+    }
+  }
+  out
+}
+
+#' other= index for one recipient species: every DB a scan of `root` would see,
+#' read-only via harvest_other(). Adds `validator`. attr "scan" as harvest_other().
+build_other_index <- function(root, species) {
+  idx  <- harvest_other(.scan_db_files(root), quiet = TRUE)
+  scan <- attr(idx, "scan")
+  idx  <- idx[idx$recipient_species %in% species, , drop = FALSE]
+  rownames(idx) <- NULL
+  idx$validator <- .other_validators(idx)
+  attr(idx, "scan") <- scan
+  idx
+}
+
+#' Place an index on the open species' grid. The cell is the donor clip's `date`
+#' re-binned to the recipient's grain (never the donor's time_period). A cell is
+#' in grid only where the recipient has its own clips (`groups`); the rest (no
+#' clip there, no date, outside the season) is counted as out of grid.
+#' @return list(cells = data.frame(unit, time_period, n_borrowed, provenance),
+#'   rows = idx + period + in_grid, n_out = rows out of grid)
+borrowed_cells <- function(idx, grain, groups) {
+  empty <- data.frame(unit = character(0), time_period = character(0),
+                      n_borrowed = integer(0), provenance = character(0), stringsAsFactors = FALSE)
+  if (is.null(idx) || !nrow(idx)) return(list(cells = empty, rows = idx, n_out = 0L))
+  d <- as.Date(idx$date, format = "%Y-%m-%d")
+  idx$period <- NA_character_
+  if (any(!is.na(d))) idx$period[!is.na(d)] <- period_key(d[!is.na(d)], grain)
+  gk <- paste(groups$unit, groups$time_period, sep = "\r")
+  idx$in_grid <- !is.na(idx$period) & paste(idx$unit, idx$period, sep = "\r") %in% gk
+  ig <- idx[idx$in_grid, , drop = FALSE]
+  cells <- empty
+  if (nrow(ig)) {
+    ig$donor <- paste(ig$source_db, ig$source_sample_id)
+    ig$who <- sprintf("%s %s (%s%s)", ig$source_species, ifelse(is.na(ig$source_file_name), "", ig$source_file_name),
+                      ig$source_mode, ifelse(is.na(ig$validator), "", paste0(", ", ig$validator)))
+    key <- paste(ig$unit, ig$period, sep = "\r")
+    cells <- do.call(rbind, lapply(split(seq_len(nrow(ig)), key), function(k) data.frame(
+      unit = ig$unit[k[1]], time_period = ig$period[k[1]],
+      n_borrowed = length(unique(ig$donor[k])),
+      provenance = paste(unique(ig$who[k]), collapse = "; "), stringsAsFactors = FALSE)))
+    rownames(cells) <- NULL
+  }
+  list(cells = cells, rows = idx, n_out = sum(!idx$in_grid))
+}
+
+#' Add n_borrowed to a derive_groups() frame; a cell with no own Y and a borrowed
+#' detection gets status "borrowed". Own Y wins: one present either way.
+apply_borrowed <- function(groups, cells) {
+  if (is.null(groups)) return(groups)
+  groups$n_borrowed <- 0L
+  if (!is.null(cells) && nrow(cells)) {
+    m <- match(paste(groups$unit, groups$time_period, sep = "\r"),
+               paste(cells$unit, cells$time_period, sep = "\r"))
+    groups$n_borrowed[!is.na(m)] <- cells$n_borrowed[m[!is.na(m)]]
+  }
+  groups$status[groups$n_yes == 0 & groups$n_borrowed > 0] <- "borrowed"
+  groups
+}
+
+#' Safety check before surfacing: the open DB's own time_period must equal
+#' period_key(date, grain) for every dated clip, or borrowed cells would land on
+#' the wrong occasion. list(ok, n_checked, n_mismatch, example).
+grain_check <- function(vdb, grain) {
+  bad <- function(n, m, ex) list(ok = FALSE, n_checked = n, n_mismatch = m, example = ex)
+  if (!all(c("date", "time_period") %in% vdb$cols)) return(bad(0L, NA_integer_, "no date/time_period column"))
+  x <- dbGetQuery(vdb$conn, "SELECT date, time_period FROM clips")
+  d <- as.Date(x$date, format = "%Y-%m-%d")
+  x <- x[!is.na(d), , drop = FALSE]; d <- d[!is.na(d)]
+  if (!nrow(x)) return(bad(0L, NA_integer_, "no dated clips"))
+  pk <- period_key(d, grain %||% "week")
+  mis <- is.na(x$time_period) | x$time_period != pk
+  ex <- if (any(mis)) sprintf("%s -> %s, DB has %s", x$date[mis][1], pk[mis][1], x$time_period[mis][1]) else NA_character_
+  list(ok = !any(mis), n_checked = nrow(x), n_mismatch = sum(mis), example = ex)
 }
 
 #' Calibration progress: validate all, no early stop.
@@ -576,12 +712,8 @@ export_results <- function(vdb, output_path) {
 #' each .db (the contract layout), so a species subdir is self-contained.
 scan_species_dbs <- function(root) {
   if (is.null(root) || !dir.exists(root)) return(NULL)
-  lvl1 <- list.dirs(root, full.names = TRUE, recursive = FALSE)
-  lvl2 <- unlist(lapply(lvl1, function(d)
-    list.dirs(d, full.names = TRUE, recursive = FALSE)), use.names = FALSE)
-  search_dirs <- unique(c(root, lvl1, lvl2))
   rows <- list()
-  for (d in search_dirs) {
+  for (d in .scan_dirs(root)) {
     dbs <- list.files(d, pattern = "\\.db$", full.names = TRUE, ignore.case = TRUE)
     for (db in dbs) {
       info <- .probe_validation_db(db)
@@ -597,6 +729,22 @@ scan_species_dbs <- function(root) {
   res <- do.call(rbind, rows)
   res <- res[!duplicated(res$db_path), , drop = FALSE]
   res[order(tolower(res$species), tolower(res$db_name)), , drop = FALSE]
+}
+
+# The folders a scan looks in: root, its sub-folders, and theirs (two levels).
+.scan_dirs <- function(root) {
+  lvl1 <- list.dirs(root, full.names = TRUE, recursive = FALSE)
+  lvl2 <- unlist(lapply(lvl1, function(d)
+    list.dirs(d, full.names = TRUE, recursive = FALSE)), use.names = FALSE)
+  unique(c(root, lvl1, lvl2))
+}
+
+#' Every .db file a scan of `root` would look at (no probe; for the other= index).
+.scan_db_files <- function(root) {
+  if (is.null(root) || !dir.exists(root)) return(character(0))
+  f <- unlist(lapply(.scan_dirs(root), function(d)
+    list.files(d, pattern = "\\.db$", full.names = TRUE, ignore.case = TRUE)), use.names = FALSE)
+  unique(normalizePath(f))
 }
 
 #' List immediate sub-directories and .db files in `dir`, for the UI browser.

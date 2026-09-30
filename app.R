@@ -83,6 +83,7 @@ APP_VERSION <- local({
   div(class = "coverage-legend", style = "font-size:11px; color:#444; margin-top:3px;",
       sw("#cccccc", "grey = to do"), sw("#dc3545", "red = examined, no Y"),
       sw("#28a745", "green = Y"),
+      sw("#17a2b8", "teal = present, heard in another species' clip (skip it)"),
       sw("#ffffff", "white = no clip in this DB (no detection \u2265 \u03c4, or not recorded)"))
 }
 
@@ -502,7 +503,8 @@ server <- function(input, output, session) {
     status_message = "", loading_status = "", warn_message = NULL, data_loaded = FALSE,
     grid_rebuild_trigger = 0L, last_audio_url = NULL,
     validator = trimws(saved_settings$validator %||% ""), session_row = NULL, pending_open = NULL,
-    browse_dir = path.expand("~"), show_browser = FALSE, scanned = NULL,
+    browse_dir = path.expand("~"), show_browser = FALSE, scanned = NULL, scan_root = NULL,
+    borrowed = NULL,   # other= surfacing for the open species (occupancy only)
     view_mode = "group",
     spec_params = list(wl = 512, ovlp = 50, wn = "hanning", flim = NULL,
                        contrast = 5, color_scheme = "magma")
@@ -604,9 +606,12 @@ server <- function(input, output, session) {
     rv$units <- tryCatch(db_units(vdb), error = function(e) character(0))   # F4 unit view
     rv$view_unit <- rv$units[1] %|na|% NULL
 
+    rv$borrowed <- NULL
     if (rv$mode == "occupancy") {
       g <- derive_groups(vdb); ord <- .unit_order_by_lon(g); rv$unit_order <- ord
       g <- g[order(match(g$unit, ord), g$time_period), , drop = FALSE]; rownames(g) <- NULL
+      rv$borrowed <- .build_borrowed(vdb, g)
+      g <- apply_borrowed(g, rv$borrowed$cells)
       rv$groups <- g; rv$group_idx <- .first_unresolved(g)
       rv$view_mode <- "bestcell"; updateSelectInput(session, "view_mode", selected = "bestcell")
     } else {
@@ -629,11 +634,34 @@ server <- function(input, output, session) {
     invisible()
   }
 
+  # other= surfacing (brief 2026-09-30): rebuilt read-only on every occupancy open, so
+  # other= lines written earlier in this session count. Index folder: the scanned
+  # folder when this DB came from the scan, else the DB's own folder (a dbs/ folder
+  # steps up to the project). Off, with a warning, if the grain check fails.
+  .build_borrowed <- function(vdb, groups) {
+    from_scan <- !is.null(rv$scan_root) && !is.null(rv$scanned) && vdb$path %in% rv$scanned$db_path
+    root <- other_index_root(if (from_scan) rv$scan_root else vdb$path)
+    chk <- grain_check(vdb, rv$grain)
+    if (!isTRUE(chk$ok)) {
+      msg <- sprintf("Other-species surfacing is off for this DB: its time_period does not match its dates at grain '%s' (%s).",
+                     rv$grain, if (is.na(chk$n_mismatch)) chk$example
+                               else sprintf("%d of %d clips, e.g. %s", chk$n_mismatch, chk$n_checked, chk$example))
+      rv$warn_message <- paste(c(rv$warn_message, msg), collapse = " ")
+      return(list(off = TRUE, cells = NULL, n_out = 0L, n_rows = 0L, n_dbs = 0L, root = root))
+    }
+    idx <- tryCatch(build_other_index(root, vdb$spcd), error = function(e) NULL)
+    if (is.null(idx)) return(list(off = FALSE, cells = NULL, n_out = 0L, n_rows = 0L, n_dbs = 0L, root = root))
+    b <- borrowed_cells(idx, rv$grain, groups)
+    list(off = FALSE, cells = b$cells, n_out = b$n_out, n_rows = nrow(idx),
+         n_dbs = sum(attr(idx, "scan")$status != "skipped"), root = root)
+  }
+
   .scan_into <- function(dir) {
     rv$scanned <- tryCatch(scan_species_dbs(dir), error = function(e) NULL)
     if (is.null(rv$scanned))
       rv$status_message <- "No validation databases found in that folder or its subfolders."
     else {
+      rv$scan_root <- normalizePath(dir)
       rv$status_message <- sprintf("Found %d database(s) under %s", nrow(rv$scanned), basename(dir))
       .persist_last_dir(dir)
     }
@@ -710,7 +738,7 @@ server <- function(input, output, session) {
   # Load the next chunk of the highest-value UNCLASSIFIED work for the current
   # view. The clips just classified drop out, so this surfaces the next batch.
   .load_batch <- function() {
-    df <- if (isTRUE(rv$view_mode == "bestcell")) load_best_per_cell(rv$vdb)
+    df <- if (isTRUE(rv$view_mode == "bestcell")) load_best_per_cell(rv$vdb, exclude = rv$borrowed$cells)
           else                                    load_unclassified_clips(rv$vdb)
     rv$all_samples <- .attach_paths(df)
     rv$page <- 1L
@@ -968,7 +996,8 @@ server <- function(input, output, session) {
     }
   }
   .refresh_groups_keep_idx <- function() {
-    g <- derive_groups(rv$vdb); ord <- rv$unit_order %||% .unit_order_by_lon(g)
+    g <- apply_borrowed(derive_groups(rv$vdb), rv$borrowed$cells)
+    ord <- rv$unit_order %||% .unit_order_by_lon(g)
     g <- g[order(match(g$unit, ord), g$time_period), , drop = FALSE]; rownames(g) <- NULL
     cur <- rv$groups[rv$group_idx, ]; rv$groups <- g
     ni <- which(g$unit == cur$unit & g$time_period == cur$time_period)
@@ -1186,6 +1215,18 @@ server <- function(input, output, session) {
     n_groups_total <- if (!is.null(rv$groups)) nrow(rv$groups) else NA
     n_groups_done  <- if (!is.null(rv$groups))
       sum(vapply(seq_len(nrow(rv$groups)), function(i) .group_done(rv$groups[i, ]), logical(1))) else NA
+    grp_split <- if (!is.null(rv$groups)) {
+      why <- vapply(seq_len(nrow(rv$groups)), function(i) group_complete(rv$groups[i, ])$reason, character(1))
+      sprintf(" (own Y %d, heard in other clips %d, absence %d)", sum(why %in% "resolved_by_Y"),
+              sum(why %in% "resolved_by_other"), sum(why %in% "examined_no_Y_absence"))
+    } else ""
+    bor <- rv$borrowed
+    bor_line <- if (rv$mode == "occupancy" && !is.null(bor)) {
+      txt <- if (isTRUE(bor$off)) "off (see the warning above)" else
+        sprintf("%d cell(s) resolved; %d detection(s) outside the grid; %d DB(s) read",
+                if (is.null(bor$cells)) 0L else nrow(bor$cells), bor$n_out, bor$n_dbs)
+      sprintf("<tr><td style='font-weight:bold;'>Other species:</td><td>%s</td></tr>", txt)
+    } else ""
     grp_line <- if (rv$mode == "occupancy" && !is.null(rv$groups)) {
       cur <- rv$groups[rv$group_idx, ]
       sprintf("Group #%d/%d: %s - %s", rv$group_idx, n_groups_total, cur$unit, cur$time_period)
@@ -1212,13 +1253,14 @@ server <- function(input, output, session) {
         <tr><td style='font-weight:bold;'>Species:</td><td>%s</td></tr>
         <tr><td style='font-weight:bold;'>Scheme:</td><td>%s</td></tr>
         <tr><td style='font-weight:bold;'>Group:</td><td>%s</td></tr>
-        %s
+        %s%s
         <tr><td style='font-weight:bold;'>Clips examined:</td><td>%d / %d</td></tr>
         %s
         <tr><td style='font-weight:bold;'>Classifications:</td><td>%s</td></tr>
       </table>",
       rv$species, .scheme_label(), grp_line,
-      if (!is.na(n_groups_total)) sprintf("<tr><td style='font-weight:bold;'>Groups complete:</td><td>%d / %d</td></tr>", n_groups_done, n_groups_total) else "",
+      if (!is.na(n_groups_total)) sprintf("<tr><td style='font-weight:bold;'>Groups complete:</td><td>%d / %d%s</td></tr>", n_groups_done, n_groups_total, grp_split) else "",
+      bor_line,
       prog$n_examined, prog$n_total, score_html, .class_badges(cc)))
   })
 
@@ -1235,6 +1277,8 @@ server <- function(input, output, session) {
     if (isTRUE(comp$complete)) {
       txt <- switch(comp$reason,
         "resolved_by_Y" = paste0("\u2713 DETECTED (Y found, ", cc_get(cc, DETECTION), ")"),
+        "resolved_by_other" = paste0("\u2713 PRESENT (heard in another species' clip: ",
+                                     htmltools::htmlEscape(.borrowed_provenance(g$unit, g$time_period)), ")"),
         "examined_no_Y_absence" = "\u2713 ABSENCE (all examined, no Y)", comp$reason)
       style <- "background:#28a745;color:white;padding:4px;border-radius:3px;font-weight:bold;"
     } else { txt <- "\u25cb In progress"; style <- "background:#dc3545;color:white;padding:4px;border-radius:3px;font-weight:bold;" }
@@ -1245,6 +1289,12 @@ server <- function(input, output, session) {
         <tr><td style='font-weight:bold;'>Clips:</td><td>%d / %d</td></tr>
         <tr><td style='font-weight:bold;'>Classifications:</td><td>%s</td></tr>
       </table>", g$unit, g$time_period, style, txt, g$n_examined, g$n_total, .class_badges(cc)))
+  }
+  .borrowed_provenance <- function(unit, period) {
+    cl <- rv$borrowed$cells
+    if (is.null(cl)) return("")
+    p <- cl$provenance[cl$unit == unit & cl$time_period == period]
+    if (length(p)) p[1] else ""
   }
   output$group_stats_table <- renderUI({ req(rv$data_loaded); rv$classification_counter; .group_stats_html() })
   output$group_box         <- renderUI({ req(rv$data_loaded); rv$classification_counter; .group_stats_html() })
@@ -1275,6 +1325,9 @@ server <- function(input, output, session) {
     t <- tile_at(rv$groups, rv$unit_order, h$x, h$y)
     if (is.null(t)) return("")
     g <- rv$groups[rv$groups$unit == t$unit & rv$groups$time_period == t$period, ][1, ]
+    if (identical(g$status, "borrowed"))
+      return(sprintf("%s \u00b7 %s \u00b7 present, heard in: %s", t$unit, t$period,
+                     .borrowed_provenance(t$unit, t$period)))
     sprintf("%s \u00b7 %s \u00b7 %s (%d/%d examined)", t$unit, t$period, g$status, g$n_examined, g$n_total)
   })
   observeEvent(input$temporal_click, {
