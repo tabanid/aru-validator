@@ -69,7 +69,7 @@ generate_spectrogram <- function(file_path, wl = 512, ovlp = 50, wn = "hanning",
   }, error = function(e) {
     list(success = FALSE, render = function() {
       suppressWarnings(plot.new())
-      text(0.5, 0.5, "audio not found", col = "#b00", cex = 1.1)
+      text(0.5, 0.5, "audio not found", col = "#bb0000", cex = 1.1)
     })
   })
 

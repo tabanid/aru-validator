@@ -504,6 +504,7 @@ server <- function(input, output, session) {
     grid_rebuild_trigger = 0L, last_audio_url = NULL,
     validator = trimws(saved_settings$validator %||% ""), session_row = NULL, pending_open = NULL,
     browse_dir = path.expand("~"), show_browser = FALSE, scanned = NULL, scan_root = NULL,
+    panel_msg = NULL,  # latest Open / Scan / browse result, shown in the Open panel
     borrowed = NULL,   # other= surfacing for the open species (occupancy only)
     view_mode = "group",
     spec_params = list(wl = 512, ovlp = 50, wn = "hanning", flim = NULL,
@@ -628,6 +629,7 @@ server <- function(input, output, session) {
       rv$status_message <- "\u2713 Every clip is classified \u2014 showing all clips for review."
     }
     rv$show_browser <- FALSE
+    rv$panel_msg <- NULL
     .persist_last_dir(vdb$db_dir)
     rv$loading_status <- sprintf("Opened %s \u2014 %s mode (%s)",
       basename(vdb$path), rv$mode, rv$mode_info$source)
@@ -656,13 +658,21 @@ server <- function(input, output, session) {
          n_dbs = sum(attr(idx, "scan")$status != "skipped"), root = root)
   }
 
+  # Panel feedback is time-stamped, so a repeat Open / Scan of the same folder
+  # still visibly answers.
+  .panel_note <- function(msg) {
+    rv$panel_msg <- sprintf("%s (%s)", msg, format(Sys.time(), "%H:%M:%S"))
+    rv$status_message <- msg
+  }
+
   .scan_into <- function(dir) {
     rv$scanned <- tryCatch(scan_species_dbs(dir), error = function(e) NULL)
     if (is.null(rv$scanned))
-      rv$status_message <- "No validation databases found in that folder or its subfolders."
+      .panel_note(sprintf("No validation databases found in %s or its subfolders.", basename(dir)))
     else {
       rv$scan_root <- normalizePath(dir)
-      rv$status_message <- sprintf("Found %d database(s) under %s", nrow(rv$scanned), basename(dir))
+      .panel_note(sprintf("Found %d database(s) under %s \u2014 choose species above",
+                          nrow(rv$scanned), basename(dir)))
       .persist_last_dir(dir)
     }
   }
@@ -670,11 +680,11 @@ server <- function(input, output, session) {
   # "Open / Scan": a .db path opens directly; a folder is scanned for species DBs.
   observeEvent(input$btn_go, {
     p <- trimws(input$db_path %||% "")
-    if (!nzchar(p)) { rv$status_message <- "Enter a folder or a .db path."; return() }
+    if (!nzchar(p)) { .panel_note("Enter a folder or a .db path."); return() }
     if (grepl("\\.db$", p, ignore.case = TRUE) && file.exists(p)) { .do_open(p); return() }
     if (dir.exists(p)) {
       rv$browse_dir <- normalizePath(p); rv$show_browser <- TRUE; .scan_into(rv$browse_dir)
-    } else rv$status_message <- "Path not found."
+    } else .panel_note(paste("Path not found:", p))
   })
 
   observeEvent(input$btn_browse_toggle, { rv$show_browser <- !isTRUE(rv$show_browser) })
@@ -684,6 +694,7 @@ server <- function(input, output, session) {
   observeEvent(input$btn_browse_up, {
     parent <- dirname(rv$browse_dir)
     if (nzchar(parent) && parent != rv$browse_dir) rv$browse_dir <- parent
+    rv$show_browser <- TRUE
   })
   observeEvent(input$btn_browse_scan, { .scan_into(rv$browse_dir) })
 
@@ -1162,15 +1173,21 @@ server <- function(input, output, session) {
     )
   })
 
+  # Which DB is open (name, species, folder; full path on hover), then the latest
+  # Open / Scan / browse result. Both lines show together: once a DB is open, a
+  # scan or a bad path must still answer here.
   output$open_status <- renderUI({
-    if (!is.null(rv$warn_message) && !isTRUE(rv$data_loaded))
-      return(span(style = "color:#b00;", rv$warn_message))
-    if (isTRUE(rv$data_loaded)) return(span(style = "color:#2e7d32;", "loaded"))
-    if (!is.null(rv$scanned))
-      return(span(style = "color:#1565c0;",
-                  sprintf("found %d database(s) \u2014 choose species below",
-                          nrow(rv$scanned))))
-    span(style = "color:#888;", rv$status_message %||% "no database open")
+    open_line <- if (isTRUE(rv$data_loaded) && !is.null(rv$vdb))
+      div(title = rv$vdb$path,
+          span(style = "color:#2e7d32;", "\u2713 Open: "), strong(basename(rv$vdb$path)),
+          span(style = "color:#555;", sprintf(" \u2014 %s, %s", rv$species, rv$mode)),
+          div(style = "font-size:11px; color:#777; word-break:break-all;", rv$vdb$db_dir))
+    else if (!is.null(rv$warn_message))
+      div(style = "color:#b00;", rv$warn_message)
+    else div(style = "color:#888;", "No database open")
+    note <- if (!is.null(rv$panel_msg))
+      div(style = "color:#1565c0; margin-top:3px;", rv$panel_msg)
+    tagList(open_line, note)
   })
   output$warn_banner <- renderUI({
     req(rv$warn_message); if (!isTRUE(rv$data_loaded)) return(NULL)
