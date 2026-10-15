@@ -140,6 +140,14 @@ ui <- page_sidebar(
         // letter would be typed into the box. Box values travel with the event, so a
         // debounced input is never stale.
         var ae = document.activeElement.id;
+        if (ae === 'db_path') {
+          if (e.key === 'Enter') {
+            Shiny.setInputValue('db_path_enter', {path: $('#db_path').val(), n: Math.random()},
+                                {priority:'event'});
+            e.preventDefault();
+          }
+          return;
+        }
         if (ae === 'notes' || ae === 'other_sp') {
           if (e.key === 'Enter') {
             Shiny.setInputValue(ae === 'notes' ? 'save_note' : 'save_other',
@@ -185,6 +193,14 @@ ui <- page_sidebar(
           var a = document.activeElement;
           if (a && a.id && /-selectized$/.test(a.id)) a.blur();
         }, 0);
+      });
+      // Species list: a click puts that DB's path in the path box, a double-click
+      // opens it. Only real user picks fire (a redraw of the list does not).
+      $(document).on('change', '#species_pick', function() {
+        Shiny.setInputValue('species_clicked', this.value, {priority:'event'});
+      });
+      $(document).on('dblclick', '#species_pick option', function() {
+        Shiny.setInputValue('species_dblclick', this.value, {priority:'event'});
       });
       // O classifies without moving on and puts the cursor in Other species (R8).
       Shiny.addCustomMessageHandler('focus_other', function(m) {
@@ -377,20 +393,16 @@ ui <- page_sidebar(
     card(class = "sb-card",
       card_header("Open validation database"),
       card_body(
-        textInput("db_path", NULL,
-                  placeholder = "/path/to/species-folder  or  SPCD-occupancy.db"),
+        # The box is the one "where": the folder list writes the folder it shows into
+        # it, Open / Scan (or Enter) acts on it. No browser form history (old paths).
+        htmltools::tagQuery(textInput("db_path", NULL,
+                  placeholder = "/path/to/species-folder  or  SPCD-occupancy.db"))$
+          find("input")$addAttrs(autocomplete = "off", spellcheck = "false")$allTags(),
         div(style = "display:flex; gap:6px; flex-wrap:wrap; margin-bottom:6px;",
             actionButton("btn_go", "Open / Scan", class = "btn-primary btn-sm"),
-            actionButton("btn_browse_toggle", "Browse\u2026", class = "btn-sm"),
+            actionButton("btn_browse_up", "\u2191 Up", class = "btn-sm"),
             actionButton("btn_browse_home", "Home", class = "btn-sm")),
-        conditionalPanel("output.show_browser == true",
-          div(style = "font-size:11px; color:#555; word-break:break-all; margin-bottom:3px;",
-              textOutput("browse_dir_label")),
-          div(style = "display:flex; gap:6px; margin-bottom:4px;",
-              actionButton("btn_browse_up",   "\u2191 Up", class = "btn-default btn-sm"),
-              actionButton("btn_browse_scan", "Scan for species", class = "btn-info btn-sm")),
-          uiOutput("dir_browser")
-        ),
+        conditionalPanel("output.show_browser == true", uiOutput("dir_browser")),
         div(style = "margin-top:6px; font-size:12px;", uiOutput("open_status"))
       )
     ),
@@ -488,10 +500,10 @@ server <- function(input, output, session) {
     updateNumericInput(session, "grid_rows",   value    = saved_settings$grid_rows)
     updateNumericInput(session, "grid_cols",   value    = saved_settings$grid_cols)
     updateCheckboxInput(session, "show_p",     value    = isTRUE(saved_settings$show_p))
-    if (!is.null(saved_settings$last_dir) && dir.exists(saved_settings$last_dir))
+    if (!is.null(saved_settings$last_dir) && dir.exists(saved_settings$last_dir)) {
       rv$browse_dir <- saved_settings$last_dir
-    if (!is.null(saved_settings$last_db) && nzchar(saved_settings$last_db))
-      updateTextInput(session, "db_path", value = saved_settings$last_db)
+      isolate(.scan_into(saved_settings$last_dir))     # species list ready at launch
+    }
   })
 
   rv <- reactiveValues(
@@ -630,6 +642,7 @@ server <- function(input, output, session) {
     }
     rv$show_browser <- FALSE
     rv$panel_msg <- NULL
+    updateTextInput(session, "db_path", value = vdb$path)   # the box shows the open DB
     .persist_last_dir(vdb$db_dir)
     rv$loading_status <- sprintf("Opened %s \u2014 %s mode (%s)",
       basename(vdb$path), rv$mode, rv$mode_info$source)
@@ -678,16 +691,22 @@ server <- function(input, output, session) {
   }
 
   # "Open / Scan": a .db path opens directly; a folder is scanned for species DBs.
-  observeEvent(input$btn_go, {
-    p <- trimws(input$db_path %||% "")
+  .go <- function(p) {
+    p <- trimws(p %||% "")
     if (!nzchar(p)) { .panel_note("Enter a folder or a .db path."); return() }
     if (grepl("\\.db$", p, ignore.case = TRUE) && file.exists(p)) { .do_open(p); return() }
     if (dir.exists(p)) {
       rv$browse_dir <- normalizePath(p); rv$show_browser <- TRUE; .scan_into(rv$browse_dir)
     } else .panel_note(paste("Path not found:", p))
-  })
+  }
+  observeEvent(input$btn_go, .go(input$db_path))
+  observeEvent(input$db_path_enter, .go(input$db_path_enter$path))
 
-  observeEvent(input$btn_browse_toggle, { rv$show_browser <- !isTRUE(rv$show_browser) })
+  # The folder list and the box stay in step: every folder change (into a folder,
+  # Up, Home, Open / Scan, launch) writes that folder into the box. Opening a DB
+  # does not change the folder, so the box then keeps the DB's path.
+  observeEvent(rv$browse_dir, updateTextInput(session, "db_path", value = rv$browse_dir))
+
   observeEvent(input$btn_browse_home, {
     rv$browse_dir <- path.expand("~"); rv$show_browser <- TRUE
   })
@@ -696,7 +715,6 @@ server <- function(input, output, session) {
     if (nzchar(parent) && parent != rv$browse_dir) rv$browse_dir <- parent
     rv$show_browser <- TRUE
   })
-  observeEvent(input$btn_browse_scan, { .scan_into(rv$browse_dir) })
 
   dir_listing <- reactive({ rv$browse_dir; list_dir_entries(rv$browse_dir) })
 
@@ -709,6 +727,18 @@ server <- function(input, output, session) {
     ents <- dir_listing(); i <- as.integer(input$browse_open)
     if (!is.na(i) && i >= 1 && i <= nrow(ents) && !ents$is_dir[i])
       .do_open(file.path(rv$browse_dir, ents$name[i]))
+  })
+  .scanned_row <- function(v) {
+    i <- suppressWarnings(as.integer(v))
+    if (!is.null(rv$scanned) && length(i) == 1 && !is.na(i) && i >= 1 && i <= nrow(rv$scanned)) i else NA_integer_
+  }
+  observeEvent(input$species_clicked, {
+    i <- .scanned_row(input$species_clicked)
+    if (!is.na(i)) updateTextInput(session, "db_path", value = rv$scanned$db_path[i])
+  })
+  observeEvent(input$species_dblclick, {
+    i <- .scanned_row(input$species_dblclick)
+    if (!is.na(i)) .do_open(rv$scanned$db_path[i])
   })
   observeEvent(input$btn_open_species, {
     req(rv$scanned, input$species_pick)
@@ -1128,14 +1158,14 @@ server <- function(input, output, session) {
         div(style = "margin-top:2px;", pills))
   })
 
-  output$show_browser <- reactive({ isTRUE(rv$show_browser) })
+  .browser_on <- function() !isTRUE(rv$data_loaded) || isTRUE(rv$show_browser)
+  output$show_browser <- reactive({ .browser_on() })
   outputOptions(output, "show_browser", suspendWhenHidden = FALSE)
   output$has_scanned <- reactive({ !is.null(rv$scanned) })
   outputOptions(output, "has_scanned", suspendWhenHidden = FALSE)
-  output$browse_dir_label <- renderText({ rv$browse_dir })
 
   output$dir_browser <- renderUI({
-    req(isTRUE(rv$show_browser))
+    req(.browser_on())
     ents <- dir_listing()
     if (nrow(ents) == 0)
       return(div(style = "font-size:12px; color:#888; padding:4px;",
@@ -1169,7 +1199,8 @@ server <- function(input, output, session) {
                       selectize = FALSE,
                       size = max(4, min(12, nrow(rv$scanned))),
                       width = "100%")),
-      actionButton("btn_open_species", "Open selected", class = "btn-success btn-sm btn-block")
+      actionButton("btn_open_species", "Open selected", class = "btn-success btn-sm btn-block"),
+      div(style = "font-size:11px; color:#777; margin-top:3px;", "Tip: double-click a species to open it.")
     )
   })
 
