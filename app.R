@@ -828,10 +828,16 @@ server <- function(input, output, session) {
     if (is.null(rv$all_samples) || nrow(rv$all_samples) == 0)
       rv$status_message <- "\u2713 Nothing left to classify in this view."
   }
+  # The work queues hold unclassified clips only, so Show there would filter a list of
+  # what is left to do: picking any Show option moves to All clips (review) instead.
   observeEvent(input$show_codes, {
     if (identical(input$show_codes, rv$show)) return()
     rv$show <- input$show_codes
-    if (isTRUE(rv$data_loaded)) .load_view()
+    if (!isTRUE(rv$data_loaded)) return()
+    if (rv$view_mode %in% c("topscore", "bestcell")) {
+      rv$view_mode <- "allclips"; updateSelectInput(session, "view_mode", selected = "allclips")
+    }
+    .load_view()
   }, ignoreInit = TRUE)
   observeEvent(input$view_mode, {
     if (!isTRUE(rv$data_loaded)) return()
