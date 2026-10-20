@@ -25,6 +25,9 @@ local({
 CODE_BUTTON <- c(btn_no = "N", btn_other = "O", btn_insect = "I",   # code-map
                  btn_peeper = "P", btn_unsure = "U")                # code-map
 stopifnot(setequal(CODE_BUTTON, c(NOT_TARGET, UNCERTAIN)))
+# O is switched off (Phil 2026-10-20): another species goes in the Other species box,
+# whatever the answer. TRUE brings back the O and Mark O buttons and their keys.
+O_BUTTON_ON <- FALSE
 `%|na|%` <- function(a, b) if (length(a) == 0 || is.na(a)) b else a
 
 # HawkEars codes for the Other species box (R8): unknown codes are flagged, never blocked.
@@ -38,7 +41,8 @@ load_settings <- function() {
                    color_scheme = "magma", contrast = 5, spec_height = 260,
                    grid_rows = 5, grid_cols = 4, last_dir = path.expand("~"),
                    validator = "",   # remembered validator name (contract §5.1)
-                   show_p = FALSE)   # p(correct) pill: display only, hidden by default (brief F2)
+                   show_p = FALSE,   # p(correct) pill: display only, hidden by default (brief F2)
+                   auto_next_page = FALSE)   # last clip answered -> next page (off: Phil 2026-10-20)
   if (file.exists(SETTINGS_FILE)) {
     tryCatch({
       s <- readRDS(SETTINGS_FILE)
@@ -87,6 +91,13 @@ APP_VERSION <- local({
       sw("#ffffff", "white = no clip in this DB (no detection \u2265 \u03c4, or not recorded)"))
 }
 
+# The O / Mark O buttons stay on screen but greyed out while O_BUTTON_ON is FALSE.
+.o_switch <- function(btn) {
+  if (O_BUTTON_ON) return(btn)
+  tagAppendAttributes(btn, disabled = NA, style = "opacity:.35;",
+                      title = "O is switched off: type other species in the Other species box")
+}
+
 # ---------------------------------------------------------------------------
 # UI
 # ---------------------------------------------------------------------------
@@ -99,7 +110,9 @@ ui <- page_sidebar(
   tags$head(
     tags$style(HTML("
       .spec-plot { border-style:solid; border-width:4px; padding:2px; cursor:pointer; margin:2px; position:relative; }
-      .spec-plot-selected { box-shadow:0 0 0 2px black; }
+      .spec-plot-selected { box-shadow:0 0 0 5px black; z-index:2; }
+      .box-clip { font-size:11px; line-height:14px; color:#333; white-space:nowrap; overflow:hidden;
+                  text-overflow:ellipsis; }
       .seek-line { position:absolute; top:4px; bottom:22px; width:2px; background:#ff3b30;
                    pointer-events:none; z-index:5; }
       .spectrogram-container { height:55vh; min-height:160px; overflow:auto; }
@@ -134,11 +147,10 @@ ui <- page_sidebar(
     ")),
     tags$script(HTML("
       $(document).on('keydown', function(e) {
-        // Typing in Notes or Other species never fires a shortcut (R8). Enter in Notes
-        // saves the note; Enter in Other species saves and moves on; Esc leaves the box.
-        // Enter and Esc both give the keys back to the shortcuts (blur), or every later
-        // letter would be typed into the box. Box values travel with the event, so a
-        // debounced input is never stale.
+        // Typing in Notes or Other species never fires a shortcut (R8). Enter saves the
+        // boxes to the clip they belong to and stays there; Esc puts back what was saved.
+        // Both leave the box (blur), which gives the keys back to the shortcuts. The
+        // save itself happens on leaving the box (the focus/blur handlers below).
         var ae = document.activeElement.id;
         if (ae === 'db_path') {
           if (e.key === 'Enter') {
@@ -149,13 +161,12 @@ ui <- page_sidebar(
           return;
         }
         if (ae === 'notes' || ae === 'other_sp') {
-          if (e.key === 'Enter') {
-            Shiny.setInputValue(ae === 'notes' ? 'save_note' : 'save_other',
-              {notes: $('#notes').val(), other: $('#other_sp').val(), n: Math.random()},
-              {priority:'event'});
-            document.activeElement.blur();
-            e.preventDefault();
-          } else if (e.key === 'Escape') { document.activeElement.blur(); e.preventDefault(); }
+          if (e.key === 'Enter') { document.activeElement.blur(); e.preventDefault(); }
+          else if (e.key === 'Escape') {
+            var b = document.activeElement;
+            if (b.dataset.orig !== undefined) { b.value = b.dataset.orig; $(b).trigger('input'); }
+            b.blur(); e.preventDefault();
+          }
           return;
         }
         // Any other place you can type (validator name, DB path, number boxes, the
@@ -173,18 +184,34 @@ ui <- page_sidebar(
           var m = {y:'btn_mark_y', s:'btn_mark_s', c:'btn_mark_c', n:'btn_mark_n',
                    u:'btn_mark_u', o:'btn_mark_o', i:'btn_mark_i', p:'btn_mark_p'};
           var k = e.key.toLowerCase();
-          if (m[k]) { $('#'+m[k]).click(); e.preventDefault(); }
+          if (m[k]) { pressBtn(m[k]); e.preventDefault(); }
           return;
         }
         var s = {s:'btn_yes_song', c:'btn_yes_call', y:'btn_yes', n:'btn_no',
                  u:'btn_unsure', o:'btn_other', i:'btn_insect', p:'btn_peeper', x:'btn_clear'};
         var k = e.key.toLowerCase();
-        if (s[k]) { $('#'+s[k]).click(); e.preventDefault(); }
+        if (s[k]) { pressBtn(s[k]); e.preventDefault(); }
         else if (e.key === ' ')          { $('#btn_play').click(); e.preventDefault(); }
         else if (e.key === 'ArrowLeft')  { Shiny.setInputValue('arrow_key','left', {priority:'event'}); e.preventDefault(); }
         else if (e.key === 'ArrowRight') { Shiny.setInputValue('arrow_key','right',{priority:'event'}); e.preventDefault(); }
         else if (e.key === 'ArrowUp')    { Shiny.setInputValue('arrow_key','up',   {priority:'event'}); e.preventDefault(); }
         else if (e.key === 'ArrowDown')  { Shiny.setInputValue('arrow_key','down', {priority:'event'}); e.preventDefault(); }
+      });
+      // A shortcut presses its button, unless the button is switched off (O, Mark O).
+      function pressBtn(id) { var b = $('#'+id); if (b.length && !b.prop('disabled')) b.click(); }
+      // Notes / Other species belong to one clip, named beside the box (box_clip). On
+      // entering a box, remember what it held; on leaving it (Enter, Tab, a click on a
+      // clip or a button), save both boxes if either changed. The server saves to the
+      // clip the boxes were loaded for, so the entry cannot land on the next clip.
+      $(document).on('focus', '#notes, #other_sp', function() {
+        $('#notes, #other_sp').each(function(){ this.dataset.orig = this.value; });
+      });
+      $(document).on('blur', '#notes, #other_sp', function() {
+        var n = $('#notes')[0], o = $('#other_sp')[0];
+        if (n.value === n.dataset.orig && o.value === o.dataset.orig) return;
+        n.dataset.orig = n.value; o.dataset.orig = o.value;
+        Shiny.setInputValue(this.id === 'notes' ? 'save_note' : 'save_other',
+          {notes: n.value, other: o.value, n: Math.random()}, {priority:'event'});
       });
       // After picking from a dropdown (view, unit, group...), give the keys back: its
       // search box would otherwise keep the cursor and swallow every shortcut.
@@ -363,6 +390,8 @@ ui <- page_sidebar(
               "All clips (review)"         = "allclips",
               "All clips for one unit"     = "unit")),
           conditionalPanel("input.view_mode == 'unit'", uiOutput("unit_select_ui")),
+          radioButtons("show_codes", "Show", SHOW_CHOICES, selected = "all", inline = TRUE),
+          checkboxInput("auto_next_page", "Go to the next page after the last clip", value = FALSE),
           div(style = "display:flex; gap:8px;",
             numericInput("grid_rows", "Rows", 5, min = 1, max = 12, step = 1),
             numericInput("grid_cols", "Cols", 4, min = 1, max = 8,  step = 1)),
@@ -440,6 +469,7 @@ ui <- page_sidebar(
     div(class = "ctl-row",
       actionButton("btn_play", "\u25b6 Play", class = "btn-secondary ctl-btn"),
       div(class = "ctl-notes",
+          uiOutput("box_clip"),
           textInput("notes", NULL, placeholder = "Notes..."),
           div(style = "display:flex; gap:4px; align-items:center;",
               textInput("other_sp", NULL, placeholder = "Other species (e.g. BTNW NAWA)"),
@@ -459,7 +489,7 @@ ui <- page_sidebar(
                    style = "background-color:#aed581;border-color:#aed581;color:#000;font-size:15px;", title = "Yes + Call"),
       actionButton("btn_no", "N", class = "btn-danger ctl-btn", style = "font-size:18px;"),
       actionButton("btn_unsure", "U", class = "btn-warning ctl-btn", style = "font-size:18px;"),
-      actionButton("btn_other", "O", class = "btn-info ctl-btn", style = "font-size:18px;"),
+      .o_switch(actionButton("btn_other", "O", class = "btn-info ctl-btn", style = "font-size:18px;")),
       actionButton("btn_insect", "I", class = "ctl-btn",
                    style = "background-color:#2196f3;border-color:#2196f3;color:#fff;font-size:18px;", title = "Insect"),
       actionButton("btn_peeper", "P", class = "ctl-btn",
@@ -473,7 +503,7 @@ ui <- page_sidebar(
                    style = "background-color:#aed581;border-color:#aed581;color:#000;", title = "Mark remaining as Call (Alt+C)"),
       actionButton("btn_mark_n", "Mark N", class = "btn-danger ctl-btn", title = "Mark remaining as No (Alt+N)"),
       actionButton("btn_mark_u", "Mark U", class = "btn-warning ctl-btn", title = "Mark remaining as Unsure (Alt+U)"),
-      actionButton("btn_mark_o", "Mark O", class = "btn-info ctl-btn", title = "Mark remaining as Other (Alt+O)"),
+      .o_switch(actionButton("btn_mark_o", "Mark O", class = "btn-info ctl-btn", title = "Mark remaining as Other (Alt+O)")),
       actionButton("btn_mark_i", "Mark I", class = "ctl-btn",
                    style = "background-color:#2196f3;border-color:#2196f3;color:#fff;", title = "Mark remaining as Insect (Alt+I)"),
       actionButton("btn_mark_p", "Mark P", class = "ctl-btn",
@@ -500,6 +530,7 @@ server <- function(input, output, session) {
     updateNumericInput(session, "grid_rows",   value    = saved_settings$grid_rows)
     updateNumericInput(session, "grid_cols",   value    = saved_settings$grid_cols)
     updateCheckboxInput(session, "show_p",     value    = isTRUE(saved_settings$show_p))
+    updateCheckboxInput(session, "auto_next_page", value = isTRUE(saved_settings$auto_next_page))
     if (!is.null(saved_settings$last_dir) && dir.exists(saved_settings$last_dir)) {
       rv$browse_dir <- saved_settings$last_dir
       isolate(.scan_into(saved_settings$last_dir))     # species list ready at launch
@@ -519,6 +550,9 @@ server <- function(input, output, session) {
     panel_msg = NULL,  # latest Open / Scan / browse result, shown in the Open panel
     borrowed = NULL,   # other= surfacing for the open species (occupancy only)
     view_mode = "group",
+    show = "all",      # Show filter (SHOW_CHOICES); back to all on every open
+    box_sid = NULL,    # sample_id the Notes / Other species boxes belong to
+    empty_note = NULL, # why the grid is empty (Show filter), shown in its place
     spec_params = list(wl = 512, ovlp = 50, wn = "hanning", flim = NULL,
                        contrast = 5, color_scheme = "magma")
   )
@@ -631,6 +665,7 @@ server <- function(input, output, session) {
       rv$groups <- NULL
       rv$view_mode <- "topscore"; updateSelectInput(session, "view_mode", selected = "topscore")
     }
+    rv$show <- "all"; updateRadioButtons(session, "show_codes", selected = "all")
     rv$data_loaded <- TRUE
     .load_view()
     # A fully validated DB leaves the work views empty: open on the review view instead.
@@ -752,13 +787,22 @@ server <- function(input, output, session) {
     df$file_path <- vapply(df$file_name, function(fn) resolve_clip_path(rv$vdb, fn), character(1))
     df
   }
-  .load_all_context <- function() {
-    rv$all_samples <- .attach_paths(load_all_clips(rv$vdb)); rv$page <- 1L; .recompute_page()
+  # Every view's clip list goes through the Show filter, then to page 1.
+  .set_samples <- function(df) {
+    n0 <- if (is.null(df)) 0L else nrow(df)
+    df <- filter_by_answer(df, rv$show)
+    rv$empty_note <- if (nrow(df) > 0 || identical(rv$show, "all")) NULL
+    else if (!identical(rv$show, "none") && rv$view_mode %in% c("topscore", "bestcell"))
+      "No clips to display. This view holds unclassified clips only; to review answers, choose View: All clips (review)."
+    else if (n0 > 0)
+      sprintf("No clips to display: none of the %d clip(s) in this view are '%s'. Set Show to All.",
+              n0, names(SHOW_CHOICES)[SHOW_CHOICES == rv$show])
+    rv$all_samples <- .attach_paths(df); rv$page <- 1L; .recompute_page()
   }
+  .load_all_context <- function() .set_samples(load_all_clips(rv$vdb))
   .load_group_context <- function() {
     req(rv$groups); cur <- rv$groups[rv$group_idx, ]
-    rv$all_samples <- .attach_paths(load_group_clips(rv$vdb, cur$unit, cur$time_period))
-    rv$page <- 1L; .recompute_page()
+    .set_samples(load_group_clips(rv$vdb, cur$unit, cur$time_period))
   }
   # Switch what clips are shown, by view. Per-clip labels and cell resolution are
   # unchanged by the view — it only re-orders/filters what's on screen.
@@ -768,10 +812,9 @@ server <- function(input, output, session) {
       .load_group_context()
     } else if (vm == "unit") {                        # F4: one unit, all weeks, by score
       u <- rv$view_unit %||% rv$units[1]
-      rv$all_samples <- if (is.null(u) || is.na(u)) NULL else .attach_paths(load_unit_clips(rv$vdb, u))
-      rv$page <- 1L; .recompute_page()
+      .set_samples(if (is.null(u) || is.na(u)) NULL else load_unit_clips(rv$vdb, u))
     } else if (vm == "allclips") {                    # browse everything, paginated
-      rv$all_samples <- .attach_paths(load_all_clips(rv$vdb)); rv$page <- 1L; .recompute_page()
+      .load_all_context()
     } else {
       .load_batch()            # topscore / bestcell / calibration: work queue
     }
@@ -781,12 +824,15 @@ server <- function(input, output, session) {
   .load_batch <- function() {
     df <- if (isTRUE(rv$view_mode == "bestcell")) load_best_per_cell(rv$vdb, exclude = rv$borrowed$cells)
           else                                    load_unclassified_clips(rv$vdb)
-    rv$all_samples <- .attach_paths(df)
-    rv$page <- 1L
-    .recompute_page()
+    .set_samples(df)
     if (is.null(rv$all_samples) || nrow(rv$all_samples) == 0)
       rv$status_message <- "\u2713 Nothing left to classify in this view."
   }
+  observeEvent(input$show_codes, {
+    if (identical(input$show_codes, rv$show)) return()
+    rv$show <- input$show_codes
+    if (isTRUE(rv$data_loaded)) .load_view()
+  }, ignoreInit = TRUE)
   observeEvent(input$view_mode, {
     if (!isTRUE(rv$data_loaded)) return()
     rv$view_mode <- input$view_mode
@@ -795,6 +841,7 @@ server <- function(input, output, session) {
   }, ignoreInit = TRUE)
   .recompute_page <- function() {
     ps <- page_size(); n <- if (is.null(rv$all_samples)) 0L else nrow(rv$all_samples)
+    rv$box_sid <- NULL       # set again when the new page's active clip loads its notes
     if (n == 0) { rv$grid_samples <- rv$all_samples; rv$active_position <- 1L
       rv$grid_rebuild_trigger <- rv$grid_rebuild_trigger + 1L; return() }
     start <- (rv$page - 1L) * ps + 1L
@@ -879,7 +926,7 @@ server <- function(input, output, session) {
     isolate({
       s <- rv$grid_samples
       if (is.null(s) || nrow(s) == 0)
-        return(div(style = "padding:20px; color:#666;", "No clips to display."))
+        return(div(style = "padding:20px; color:#666;", rv$empty_note %||% "No clips to display."))
       cols <- input$grid_cols %||% 4; n <- nrow(s); nrw <- ceiling(n / cols)
       pos <- 1L; rows <- list()
       for (r in seq_len(nrw)) {
@@ -966,6 +1013,14 @@ server <- function(input, output, session) {
     sp <- split_notes(if (nrow(r)) r$notes else NA_character_)
     updateTextInput(session, "notes",    value = sp$free)
     updateTextInput(session, "other_sp", value = paste(sp$other, collapse = " "))
+    rv$box_sid <- smp$sample_id      # the boxes now belong to this clip, and save to it
+  })
+  output$box_clip <- renderUI({
+    req(rv$box_sid, rv$grid_samples)
+    fn <- rv$grid_samples$file_name[rv$grid_samples$sample_id == rv$box_sid][1]
+    if (is.na(fn)) return(NULL)
+    span(class = "box-clip", title = paste("Notes and Other species are saved to", fn),
+         "for ", strong(tools::file_path_sans_ext(fn)))
   })
   # notes value to write: Other species codes + the free-text comment (R8).
   .notes_value <- function(other_txt, free) compose_notes(parse_other_codes(other_txt, rv$species), free)
@@ -977,21 +1032,15 @@ server <- function(input, output, session) {
          style = "background:#ffb300;color:#000;padding:1px 6px;border-radius:3px;font-size:11px;white-space:nowrap;",
          paste(unk, collapse = " "))
   })
-  observeEvent(input$save_other, {
-    req(.has_active(), rv$vdb)
-    ev <- input$save_other
-    smp <- rv$grid_samples[rv$active_position, ]
-    save_note(rv$vdb, smp$sample_id, .notes_value(.box(ev, "other"), .box(ev, "notes")))
-    rv$status_message <- "\u2713 Other species saved"
-    .advance()
-  })
-  observeEvent(input$save_note, {
-    req(.has_active(), rv$vdb)
-    ev <- input$save_note
-    smp <- rv$grid_samples[rv$active_position, ]
-    save_note(rv$vdb, smp$sample_id, .notes_value(.box(ev, "other"), .box(ev, "notes")))
-    rv$status_message <- "\u2713 Note saved"
-  })
+  # Leaving a box (Enter, Tab, a click) saves both boxes to the clip they belong to
+  # (rv$box_sid), not to whichever clip is active by then; the selection stays put.
+  .save_boxes <- function(ev, msg) {
+    req(rv$vdb, rv$box_sid)
+    save_note(rv$vdb, rv$box_sid, .notes_value(.box(ev, "other"), .box(ev, "notes")))
+    rv$status_message <- msg
+  }
+  observeEvent(input$save_other, .save_boxes(input$save_other, "\u2713 Other species saved"))
+  observeEvent(input$save_note,  .save_boxes(input$save_note,  "\u2713 Note saved"))
 
   # ---- audio ------------------------------------------------------------
   observeEvent(input$btn_play, {
@@ -1007,8 +1056,9 @@ server <- function(input, output, session) {
   .save_active <- function(cls, voc = NULL, advance = TRUE) {
     req(.has_active(), rv$vdb)
     smp <- rv$grid_samples[rv$active_position, ]
-    save_classification(rv$vdb, smp$sample_id, cls, voc,
-                        notes = .notes_value(input$other_sp, input$notes), update_notes = TRUE)
+    # Notes are not written here: the boxes save themselves on leaving them (.save_boxes),
+    # and the box text seen by the server can lag what was typed.
+    save_classification(rv$vdb, smp$sample_id, cls, voc)
     .update_local(smp$sample_id, cls, voc)
     rv$last_updated_clip <- rv$active_position
     rv$classification_counter <- rv$classification_counter + 1L
@@ -1033,7 +1083,10 @@ server <- function(input, output, session) {
       rv$previous_active_position <- rv$active_position
       rv$active_position <- rv$active_position + 1L
     } else if (rv$page * ps < nrow(rv$all_samples)) {
-      rv$page <- rv$page + 1L; .recompute_page()   # end of screen -> next page
+      if (isTRUE(input$auto_next_page)) {
+        rv$page <- rv$page + 1L; .recompute_page()   # end of screen -> next page
+      } else showNotification("Last clip on this page: \u25ba for the next page.",
+                              type = "message", duration = 3)
     }
   }
   .refresh_groups_keep_idx <- function() {
@@ -1051,6 +1104,7 @@ server <- function(input, output, session) {
     id <- b; code <- CODE_BUTTON[[b]]
     if (identical(code, "O")) {   # code-map. O: stay on the clip, cursor to Other species (R8)
       observeEvent(input[[id]], {
+        if (!O_BUTTON_ON) return()
         .save_active(code, advance = FALSE)
         session$sendCustomMessage("focus_other", list())
       })
@@ -1094,6 +1148,7 @@ server <- function(input, output, session) {
   observeEvent(input$btn_mark_c, .mark_all(DETECTION, VOC_CALL))
   for (k in c(NOT_TARGET, UNCERTAIN)) local({          # btn_mark_n / _o / _i / _p / _u
     code <- k
+    if (identical(code, "O") && !O_BUTTON_ON) return()   # code-map: Mark O switched off
     observeEvent(input[[paste0("btn_mark_", tolower(code))]], .mark_all(code))
   })
 
@@ -1104,7 +1159,7 @@ server <- function(input, output, session) {
       freq_range = input$freq_range, color_scheme = input$color_scheme,
       contrast = input$contrast, spec_height = input$spec_height,
       grid_rows = input$grid_rows, grid_cols = input$grid_cols,
-      show_p = isTRUE(input$show_p),
+      show_p = isTRUE(input$show_p), auto_next_page = isTRUE(input$auto_next_page),
       last_db  = if (!is.null(rv$vdb)) rv$vdb$path   else saved_settings$last_db,
       last_dir = if (!is.null(rv$vdb)) rv$vdb$db_dir else saved_settings$last_dir,
       validator = rv$validator))

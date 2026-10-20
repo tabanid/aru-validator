@@ -188,6 +188,21 @@ load_unclassified_clips <- function(vdb) {
     "SELECT * FROM clips WHERE classified IS NULL OR classified = 0 ORDER BY score DESC")
 }
 
+# "Show" filter on top of any view (Phil 2026-10-20): all, one answer, unclassified,
+# or every other code. Order is kept; the view itself is unchanged.
+SHOW_CHOICES <- c("All" = "all", "Y" = "Y", "N" = "N", "U" = "U",   # code-map
+                  "Unclassified" = "none", "Everything else" = "rest")
+SHOW_REST_CODES <- setdiff(ALL_CODES, c(DETECTION, "N", UNCERTAIN))   # code-map: O, I, P
+filter_by_answer <- function(df, show = "all") {
+  if (is.null(df) || nrow(df) == 0 || is.null(show) || identical(show, "all")) return(df)
+  done <- !is.na(df$classified) & df$classified == 1 & !is.na(df$classification)
+  keep <- switch(show,
+    none = !done,
+    rest = done & df$classification %in% SHOW_REST_CODES,
+    done & df$classification == show)
+  df[keep, , drop = FALSE]
+}
+
 load_group_clips <- function(vdb, unit, time_period) {
   dbGetQuery(vdb$conn,
     "SELECT * FROM clips WHERE unit = ? AND time_period = ? ORDER BY score DESC",
