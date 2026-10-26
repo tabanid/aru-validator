@@ -24,14 +24,18 @@ local({
 # Single-code buttons -> the code they write (Y/Song/Call are wired by name below).
 CODE_BUTTON <- c(btn_no = "N", btn_other = "O", btn_insect = "I",   # code-map
                  btn_peeper = "P", btn_unsure = "U")                # code-map
-stopifnot(setequal(CODE_BUTTON, c(NOT_TARGET, UNCERTAIN)))
-# O is switched off (Phil 2026-10-20): another species goes in the Other species box,
-# whatever the answer. TRUE brings back the O and Mark O buttons and their keys.
-O_BUTTON_ON <- FALSE
+stopifnot(setequal(CODE_BUTTON, c(NOT_TARGET, UNCERTAIN)))   # buttons for parked codes stay, greyed
+# O, I and P are parked as target labels (brief D8; O since 2026-10-20). O is now the
+# key into the other-species list (D9); it saves nothing. Mark O stays off.
+# IP_BUTTONS_ON = TRUE brings back the I / P / Mark I / Mark P buttons and their keys
+# (the write gate, WRITE_CODES in db.R, still refuses the codes).
+IP_BUTTONS_ON <- FALSE
+stopifnot(all(PARKED_CODES %in% CODE_BUTTON))
 `%|na|%` <- function(a, b) if (length(a) == 0 || is.na(a)) b else a
 
-# HawkEars codes for the Other species box (R8): unknown codes are flagged, never blocked.
-KNOWN_SPECIES_CODES <- load_known_species_codes()
+# HawkEars codes for the list's Add box: unknown codes are flagged, never blocked. The
+# non-bird classes (Squirrel, FROG-PEEP, ...) count as known (D6).
+KNOWN_SPECIES_CODES <- local({ k <- load_known_species_codes(); if (is.null(k)) NULL else c(k, HE_NONBIRD_CODES) })
 
 # ---- display-settings persistence (A5) — same file as the previous tool ------
 # ARU_VALIDATOR_SETTINGS overrides the location (tests point it at a temp file).
@@ -91,12 +95,12 @@ APP_VERSION <- local({
       sw("#ffffff", "white = no clip in this DB (no detection \u2265 \u03c4, or not recorded)"))
 }
 
-# The O / Mark O buttons stay on screen but greyed out while O_BUTTON_ON is FALSE.
-.o_switch <- function(btn) {
-  if (O_BUTTON_ON) return(btn)
+# Parked buttons stay on screen, greyed out: their keys do nothing (pressBtn skips them).
+.parked <- function(btn, code) {
   tagAppendAttributes(btn, disabled = NA, style = "opacity:.35;",
-                      title = "O is switched off: type other species in the Other species box")
+                      title = sprintf("%s is parked: label other species in the list (O)", code))
 }
+.ip_switch <- function(btn, code) if (IP_BUTTONS_ON) btn else .parked(btn, code)
 
 # ---------------------------------------------------------------------------
 # UI
@@ -121,7 +125,21 @@ ui <- page_sidebar(
       .clip-resizer::before { content:''; width:70px; height:4px; border-radius:2px; background:#cbd3da; }
       .clip-resizer:hover::before, .clip-resizer.dragging::before { background:#0d6efd; }
       #notes { height:38px !important; }
-      #other_sp { height:32px !important; }
+      #other_add { height:28px !important; font-size:13px; }
+      .other-list { font-size:13px; margin-top:4px; }
+      .other-head { font-size:11px; color:#333; }
+      .other-hint { display:none; color:#0d6efd; font-weight:600; }
+      .other-list:focus-within .other-hint { display:inline; }
+      .other-row { display:flex; align-items:center; gap:4px; padding:1px 3px; border-radius:3px; outline:none; }
+      .other-row:focus { box-shadow:0 0 0 2px #0d6efd; background:#eef6ff; }
+      .other-code { min-width:76px; font-family:monospace; }
+      .other-code.unknown { background:#ffb300; padding:0 3px; border-radius:3px; }
+      .other-btn { width:26px; height:22px; padding:0; font-size:12px; border:1px solid #bbb; background:#fff; border-radius:3px; }
+      .other-btn.on-Y { background:#4caf50; color:#fff; border-color:#4caf50; }
+      .other-btn.on-N { background:#dc3545; color:#fff; border-color:#dc3545; }
+      .other-btn.on-U { background:#ff9800; color:#fff; border-color:#ff9800; }
+      .other-x { border:none; background:none; color:#888; padding:0 4px; }
+      .other-none { color:#888; font-size:12px; }
       .species-pick-wrap select { width:100% !important; font-size:14px; line-height:1.5; }
       .species-pick-wrap select option { padding:6px 8px; }
       .mode-cal { color:#6a1b9a; font-weight:bold; }
@@ -160,7 +178,36 @@ ui <- page_sidebar(
           }
           return;
         }
-        if (ae === 'notes' || ae === 'other_sp') {
+        // The other-species list (brief Part 3): O puts the focus on a row. There y / n / u
+        // label that row (pressing the lit one again clears it), arrows move between rows,
+        // a goes to the Add box, Space plays, Esc or Enter leave. Every other key is ignored,
+        // so a stray key never labels or clears the target while in the list.
+        var ael = document.activeElement;
+        if (ael && $(ael).hasClass('other-row')) {
+          var rows = $('#other_list .other-row'), i = rows.index(ael), lk = e.key.toLowerCase();
+          if (e.key === 'Tab') return;
+          if (e.key === 'ArrowDown')     { if (i < rows.length - 1) rows.eq(i + 1).focus(); }
+          else if (e.key === 'ArrowUp')  { if (i > 0) rows.eq(i - 1).focus(); }
+          else if (lk === 'y' || lk === 'n' || lk === 'u') otherSet(ael.dataset.code, lk.toUpperCase(), true);
+          else if (lk === 'a')           $('#other_add').focus();
+          else if (e.key === ' ')        $('#btn_play').click();
+          else if (e.key === 'Escape' || e.key === 'Enter') { window.otherFocus = null; ael.blur(); }
+          e.preventDefault(); return;
+        }
+        // Add box: Enter adds the typed code(s) to the clip the list belongs to and stays
+        // (empty: leaves); Esc empties it and leaves.
+        if (ae === 'other_add') {
+          if (e.key === 'Enter') {
+            var v = $('#other_add').val();
+            if (v.trim()) {
+              Shiny.setInputValue('other_add_go', {txt: v, sid: otherSid(), n: Math.random()}, {priority:'event'});
+              $('#other_add').val('').trigger('input');
+            } else document.activeElement.blur();
+            e.preventDefault();
+          } else if (e.key === 'Escape') { $('#other_add').val('').trigger('input'); document.activeElement.blur(); e.preventDefault(); }
+          return;
+        }
+        if (ae === 'notes') {
           if (e.key === 'Enter') { document.activeElement.blur(); e.preventDefault(); }
           else if (e.key === 'Escape') {
             var b = document.activeElement;
@@ -197,21 +244,33 @@ ui <- page_sidebar(
         else if (e.key === 'ArrowUp')    { Shiny.setInputValue('arrow_key','up',   {priority:'event'}); e.preventDefault(); }
         else if (e.key === 'ArrowDown')  { Shiny.setInputValue('arrow_key','down', {priority:'event'}); e.preventDefault(); }
       });
-      // A shortcut presses its button, unless the button is switched off (O, Mark O).
+      // A shortcut presses its button, unless the button is parked (I, P, Mark O/I/P).
       function pressBtn(id) { var b = $('#'+id); if (b.length && !b.prop('disabled')) b.click(); }
-      // Notes / Other species belong to one clip, named beside the box (box_clip). On
-      // entering a box, remember what it held; on leaving it (Enter, Tab, a click on a
-      // clip or a button), save both boxes if either changed. The server saves to the
-      // clip the boxes were loaded for, so the entry cannot land on the next clip.
-      $(document).on('focus', '#notes, #other_sp', function() {
-        $('#notes, #other_sp').each(function(){ this.dataset.orig = this.value; });
+      // The clip the list belongs to (data-sid on the rendered list).
+      function otherSid() { var l = $('#other_list .other-list'); return l.length ? parseInt(l.attr('data-sid')) : null; }
+      // Set a list row. The server toggles: the lit label again clears the row. From the
+      // keyboard, the focus comes back to the same row after the list redraws.
+      function otherSet(code, label, fromKey) {
+        window.otherFocus = fromKey ? {code: code, sid: otherSid()} : null;
+        Shiny.setInputValue('other_set', {code: code, label: label, sid: otherSid(), n: Math.random()}, {priority:'event'});
+      }
+      $(document).on('shiny:value', function(ev) {
+        if (ev.name !== 'other_list' || !window.otherFocus) return;
+        var f = window.otherFocus;
+        setTimeout(function() {
+          var r = $('#other_list .other-row').filter(function() { return this.dataset.code === f.code; });
+          if (r.length && otherSid() === f.sid) r.focus(); else window.otherFocus = null;
+        }, 30);
       });
-      $(document).on('blur', '#notes, #other_sp', function() {
-        var n = $('#notes')[0], o = $('#other_sp')[0];
-        if (n.value === n.dataset.orig && o.value === o.dataset.orig) return;
-        n.dataset.orig = n.value; o.dataset.orig = o.value;
-        Shiny.setInputValue(this.id === 'notes' ? 'save_note' : 'save_other',
-          {notes: n.value, other: o.value, n: Math.random()}, {priority:'event'});
+      // Notes belong to one clip, named beside the box (box_clip). On entering the box,
+      // remember what it held; on leaving it (Enter, Tab, a click on a clip or a button),
+      // save it if it changed. The server saves to the clip the box was loaded for, so
+      // the entry cannot land on the next clip. Free text only (contract v4).
+      $(document).on('focus', '#notes', function() { this.dataset.orig = this.value; });
+      $(document).on('blur', '#notes', function() {
+        if (this.value === this.dataset.orig) return;
+        this.dataset.orig = this.value;
+        Shiny.setInputValue('save_note', {notes: this.value, n: Math.random()}, {priority:'event'});
       });
       // After picking from a dropdown (view, unit, group...), give the keys back: its
       // search box would otherwise keep the cursor and swallow every shortcut.
@@ -229,9 +288,13 @@ ui <- page_sidebar(
       $(document).on('dblclick', '#species_pick option', function() {
         Shiny.setInputValue('species_dblclick', this.value, {priority:'event'});
       });
-      // O classifies without moving on and puts the cursor in Other species (R8).
+      // O moves the focus into the other-species list: its first row, or the Add box
+      // when the clip has no rows (D9). Nothing is saved.
       Shiny.addCustomMessageHandler('focus_other', function(m) {
-        setTimeout(function(){ $('#other_sp').focus().select(); }, 50);
+        setTimeout(function(){
+          var r = $('#other_list .other-row').first();
+          if (r.length) r.focus(); else $('#other_add').focus();
+        }, 50);
       });
       Shiny.addCustomMessageHandler('play_audio_client', function(message) {
         var a = document.getElementById('audio_player'); if (!a) return;
@@ -273,7 +336,8 @@ ui <- page_sidebar(
       }
       function clipClick(el, idx, ev){
         var ae = document.activeElement;              // clicking a clip leaves the text boxes
-        if (ae && (ae.id === 'notes' || ae.id === 'other_sp')) ae.blur();
+        if (ae && (ae.id === 'notes' || ae.id === 'other_add' || $(ae).hasClass('other-row'))) {
+          window.otherFocus = null; ae.blur(); }
         var rect = el.getBoundingClientRect();
         var x = ev.clientX - rect.left;
         var w = el.clientWidth || rect.width;
@@ -471,9 +535,10 @@ ui <- page_sidebar(
       div(class = "ctl-notes",
           uiOutput("box_clip"),
           textInput("notes", NULL, placeholder = "Notes..."),
+          uiOutput("other_list"),
           div(style = "display:flex; gap:4px; align-items:center;",
-              textInput("other_sp", NULL, placeholder = "Other species (e.g. BTNW NAWA)"),
-              uiOutput("other_sp_flag", inline = TRUE))),
+              textInput("other_add", NULL, placeholder = "Add (e.g. BTNW)"),
+              uiOutput("other_add_flag", inline = TRUE))),
       uiOutput("nav_buttons"),
       actionButton("btn_clear", "Clear", class = "ctl-btn",
                    style = "background-color:#f44336;border-color:#f44336;color:#fff;", title = "Clear (x)"),
@@ -489,11 +554,12 @@ ui <- page_sidebar(
                    style = "background-color:#aed581;border-color:#aed581;color:#000;font-size:15px;", title = "Yes + Call"),
       actionButton("btn_no", "N", class = "btn-danger ctl-btn", style = "font-size:18px;"),
       actionButton("btn_unsure", "U", class = "btn-warning ctl-btn", style = "font-size:18px;"),
-      .o_switch(actionButton("btn_other", "O", class = "btn-info ctl-btn", style = "font-size:18px;")),
-      actionButton("btn_insect", "I", class = "ctl-btn",
-                   style = "background-color:#2196f3;border-color:#2196f3;color:#fff;font-size:18px;", title = "Insect"),
-      actionButton("btn_peeper", "P", class = "ctl-btn",
-                   style = "background-color:#9c27b0;border-color:#9c27b0;color:#fff;font-size:18px;", title = "Peeper")
+      actionButton("btn_other", "O", class = "btn-info ctl-btn", style = "font-size:18px;",
+                   title = "Other species list (O)"),
+      .ip_switch(actionButton("btn_insect", "I", class = "ctl-btn",
+                   style = "background-color:#2196f3;border-color:#2196f3;color:#fff;font-size:18px;", title = "Insect"), CODE_BUTTON[["btn_insect"]]),
+      .ip_switch(actionButton("btn_peeper", "P", class = "ctl-btn",
+                   style = "background-color:#9c27b0;border-color:#9c27b0;color:#fff;font-size:18px;", title = "Peeper"), CODE_BUTTON[["btn_peeper"]])
     ),
     div(class = "ctl-row",
       actionButton("btn_mark_y", "Mark Y", class = "btn-success ctl-btn", title = "Mark remaining as Yes (Alt+Y)"),
@@ -503,11 +569,11 @@ ui <- page_sidebar(
                    style = "background-color:#aed581;border-color:#aed581;color:#000;", title = "Mark remaining as Call (Alt+C)"),
       actionButton("btn_mark_n", "Mark N", class = "btn-danger ctl-btn", title = "Mark remaining as No (Alt+N)"),
       actionButton("btn_mark_u", "Mark U", class = "btn-warning ctl-btn", title = "Mark remaining as Unsure (Alt+U)"),
-      .o_switch(actionButton("btn_mark_o", "Mark O", class = "btn-info ctl-btn", title = "Mark remaining as Other (Alt+O)")),
-      actionButton("btn_mark_i", "Mark I", class = "ctl-btn",
-                   style = "background-color:#2196f3;border-color:#2196f3;color:#fff;", title = "Mark remaining as Insect (Alt+I)"),
-      actionButton("btn_mark_p", "Mark P", class = "ctl-btn",
-                   style = "background-color:#9c27b0;border-color:#9c27b0;color:#fff;", title = "Mark remaining as Peeper (Alt+P)")
+      .parked(actionButton("btn_mark_o", "Mark O", class = "btn-info ctl-btn", title = "Mark remaining as Other (Alt+O)"), CODE_BUTTON[["btn_other"]]),
+      .ip_switch(actionButton("btn_mark_i", "Mark I", class = "ctl-btn",
+                   style = "background-color:#2196f3;border-color:#2196f3;color:#fff;", title = "Mark remaining as Insect (Alt+I)"), CODE_BUTTON[["btn_insect"]]),
+      .ip_switch(actionButton("btn_mark_p", "Mark P", class = "ctl-btn",
+                   style = "background-color:#9c27b0;border-color:#9c27b0;color:#fff;", title = "Mark remaining as Peeper (Alt+P)"), CODE_BUTTON[["btn_peeper"]])
     )
   )
 )
@@ -551,7 +617,9 @@ server <- function(input, output, session) {
     borrowed = NULL,   # other= surfacing for the open species (occupancy only)
     view_mode = "group",
     show = "all",      # Show filter (SHOW_CHOICES); back to all on every open
-    box_sid = NULL,    # sample_id the Notes / Other species boxes belong to
+    box_sid = NULL,    # sample_id the Notes box and the other-species list belong to
+    other_rev = 0L,    # bumped on every list write: redraws the list
+    anchor = NULL,     # validation_meta.anchor_date (grain anchored_week)
     empty_note = NULL, # why the grid is empty (Show filter), shown in its place
     spec_params = list(wl = 512, ovlp = 50, wn = "hanning", flim = NULL,
                        contrast = 5, color_scheme = "magma")
@@ -635,6 +703,8 @@ server <- function(input, output, session) {
       paste(unique(dbGetQuery(vdb$conn, "SELECT DISTINCT spcd FROM clips")$spcd), collapse = ", ")
     rv$grain <- if (!is.null(mi$meta) && "grain" %in% names(mi$meta) && !is.na(mi$meta$grain))
       as.character(mi$meta$grain) else "week"
+    rv$anchor <- if (!is.null(mi$meta) && "anchor_date" %in% names(mi$meta) && !is.na(mi$meta$anchor_date))
+      as.character(mi$meta$anchor_date) else NULL
 
     # one resource prefix per audio dir that exists (beside / clips/{SPCD} / fallback)
     for (k in names(vdb$audio_dirs)) addResourcePath(AUDIO_PREFIXES[[k]], vdb$audio_dirs[[k]])
@@ -691,7 +761,7 @@ server <- function(input, output, session) {
   .build_borrowed <- function(vdb, groups) {
     from_scan <- !is.null(rv$scan_root) && !is.null(rv$scanned) && vdb$path %in% rv$scanned$db_path
     root <- other_index_root(if (from_scan) rv$scan_root else vdb$path)
-    chk <- grain_check(vdb, rv$grain)
+    chk <- grain_check(vdb, rv$grain, rv$anchor)
     if (!isTRUE(chk$ok)) {
       msg <- sprintf("Other-species surfacing is off for this DB: its time_period does not match its dates at grain '%s' (%s).",
                      rv$grain, if (is.na(chk$n_mismatch)) chk$example
@@ -701,7 +771,7 @@ server <- function(input, output, session) {
     }
     idx <- tryCatch(build_other_index(root, vdb$spcd), error = function(e) NULL)
     if (is.null(idx)) return(list(off = FALSE, cells = NULL, n_out = 0L, n_rows = 0L, n_dbs = 0L, root = root))
-    b <- borrowed_cells(idx, rv$grain, groups)
+    b <- borrowed_cells(idx, rv$grain, groups, rv$anchor)
     list(off = FALSE, cells = b$cells, n_out = b$n_out, n_rows = nrow(idx),
          n_dbs = sum(attr(idx, "scan")$status != "skipped"), root = root)
   }
@@ -1007,46 +1077,100 @@ server <- function(input, output, session) {
     s <- rv$grid_samples; a <- rv$active_position
     !is.null(s) && !is.null(a) && length(a) == 1 && !is.na(a) && a >= 1 && a <= nrow(s)
   }
-  # Load the active clip's notes into the two boxes (R8: other= line -> Other species).
-  # Also on every grid rebuild: a new page keeps active_position at 1, and the boxes
-  # must not carry the previous clip's text onto the new one.
+  # Load the active clip's notes into the box and point the list at it. Also on every
+  # grid rebuild: a new page keeps active_position at 1, and the box must not carry the
+  # previous clip's text onto the new one.
   observeEvent(list(rv$active_position, rv$grid_rebuild_trigger), {
     req(.has_active(), rv$vdb)
     if (rv$active_position > nrow(rv$grid_samples)) return()
     smp <- rv$grid_samples[rv$active_position, ]
     r <- dbGetQuery(rv$vdb$conn, "SELECT notes FROM clips WHERE sample_id = ?",
                     params = list(smp$sample_id))
-    sp <- split_notes(if (nrow(r)) r$notes else NA_character_)
-    updateTextInput(session, "notes",    value = sp$free)
-    updateTextInput(session, "other_sp", value = paste(sp$other, collapse = " "))
-    rv$box_sid <- smp$sample_id      # the boxes now belong to this clip, and save to it
+    updateTextInput(session, "notes", value = if (nrow(r) && !is.na(r$notes)) r$notes else "")
+    rv$box_sid <- smp$sample_id      # the box and the list now belong to this clip
   })
   output$box_clip <- renderUI({
     req(rv$box_sid, rv$grid_samples)
     fn <- rv$grid_samples$file_name[rv$grid_samples$sample_id == rv$box_sid][1]
     if (is.na(fn)) return(NULL)
-    span(class = "box-clip", title = paste("Notes and Other species are saved to", fn),
+    span(class = "box-clip", title = paste("Notes and other species are saved to", fn),
          "for ", strong(tools::file_path_sans_ext(fn)))
   })
-  # notes value to write: Other species codes + the free-text comment (R8).
-  .notes_value <- function(other_txt, free) compose_notes(parse_other_codes(other_txt, rv$species), free)
-  .box <- function(ev, key) if (is.list(ev) && !is.null(ev[[key]])) ev[[key]] else input[[if (key == "other") "other_sp" else key]]
-  output$other_sp_flag <- renderUI({
-    unk <- unknown_codes(parse_other_codes(input$other_sp, rv$species), KNOWN_SPECIES_CODES)
+  # Leaving the Notes box (Enter, Tab, a click) saves it to the clip it belongs to
+  # (rv$box_sid), not to whichever clip is active by then; the selection stays put.
+  observeEvent(input$save_note, {
+    req(rv$vdb, rv$box_sid)
+    ev <- input$save_note
+    save_note(rv$vdb, rv$box_sid, if (is.list(ev) && !is.null(ev$notes)) ev$notes else input$notes)
+    rv$status_message <- "\u2713 Note saved"
+  })
+
+  # ---- the other-species list (brief Part 3; contract v4 §4.4) -------------
+  # Always the active clip's (rv$box_sid). Every click writes at once to the open DB,
+  # never advances, and is independent of the target label (D7).
+  .other_row <- function(r, unk) {
+    btn <- function(l) tags$button(type = "button", tabindex = "-1", l,
+      class = paste("other-btn", if (identical(r$label, l)) paste0("on-", l)),
+      onmousedown = "event.preventDefault();",
+      onclick = sprintf("otherSet('%s','%s',false)", r$code, l))
+    div(class = "other-row", tabindex = "0", `data-code` = r$code,
+        title = if (r$source == "legacy") "converted from an old other= note" else NULL,
+        span(class = paste("other-code", if (r$code %in% unk) "unknown"), r$code),
+        lapply(OTHER_LABELS, btn),
+        if (!r$listed) tags$button(type = "button", tabindex = "-1", class = "other-x", "\u00d7",
+          title = "remove", onmousedown = "event.preventDefault();",
+          onclick = sprintf("Shiny.setInputValue('other_set',{code:'%s',label:null,sid:otherSid(),n:Math.random()},{priority:'event'})", r$code)))
+  }
+  output$other_list <- renderUI({
+    rv$other_rev
+    req(rv$vdb, rv$box_sid)
+    sid <- rv$box_sid
+    ol <- other_list(rv$vdb, sid)
+    unk <- unknown_codes(ol$code[!ol$listed], KNOWN_SPECIES_CODES)
+    fn <- rv$grid_samples$file_name[rv$grid_samples$sample_id == sid][1]
+    div(class = "other-list", `data-sid` = sid,
+        div(class = "other-head", "Other species", if (!is.na(fn)) paste0(" \u2014 ", tools::file_path_sans_ext(fn)),
+            span(class = "other-hint", " \u00b7 keys label this list, Esc leaves")),
+        if (nrow(ol)) lapply(seq_len(nrow(ol)), function(i) .other_row(ol[i, ], unk))
+        else div(class = "other-none", "no HawkEars candidates: O, then type in Add"),
+        tags$label(style = "font-size:12px; margin:2px 0 0 3px;", title = "every species heard on this clip is labelled or added",
+          tags$input(type = "checkbox", checked = if (get_others_complete(rv$vdb, sid)) NA else NULL,
+                     onchange = "Shiny.setInputValue('other_complete_set',{v:this.checked,sid:otherSid(),n:Math.random()},{priority:'event'})"),
+          " complete"))
+  })
+  .other_sid <- function(ev) { s <- suppressWarnings(as.integer(ev$sid)); if (length(s) == 1 && !is.na(s)) s else rv$box_sid }
+  observeEvent(input$other_set, {
+    req(rv$vdb); ev <- input$other_set; sid <- .other_sid(ev); req(sid, ev$code)
+    cur <- dbGetQuery(rv$vdb$conn, "SELECT label FROM clip_others WHERE sample_id = ? AND code = ?",
+                      params = list(sid, ev$code))$label
+    lab <- if (is.null(ev$label) || identical(cur, ev$label)) NULL else ev$label   # lit again -> blank
+    set_other(rv$vdb, sid, ev$code, lab)
+    rv$other_rev <- rv$other_rev + 1L
+    rv$status_message <- sprintf("\u2713 %s: %s", ev$code, lab %||% "cleared")
+  })
+  observeEvent(input$other_add_go, {
+    req(rv$vdb); ev <- input$other_add_go; sid <- .other_sid(ev); req(sid)
+    codes <- parse_other_codes(ev$txt, rv$species)
+    if (!length(codes)) { rv$status_message <- "Nothing to add (the target's own code is dropped)."; return() }
+    for (k in codes) set_other(rv$vdb, sid, k, DETECTION)   # a typed code is heard: Y
+    rv$other_rev <- rv$other_rev + 1L
+    unk <- unknown_codes(codes, KNOWN_SPECIES_CODES)
+    rv$status_message <- sprintf("\u2713 Added %s as Y%s", paste(codes, collapse = " "),
+                                 if (length(unk)) paste0(" (not a known code, saved anyway: ", paste(unk, collapse = " "), ")") else "")
+  })
+  observeEvent(input$other_complete_set, {
+    req(rv$vdb); ev <- input$other_complete_set; sid <- .other_sid(ev); req(sid)
+    set_others_complete(rv$vdb, sid, isTRUE(ev$v))
+    rv$other_rev <- rv$other_rev + 1L
+  })
+  # Live flag for codes typed in the Add box that are not HawkEars codes (saved anyway).
+  output$other_add_flag <- renderUI({
+    unk <- unknown_codes(parse_other_codes(input$other_add, rv$species), KNOWN_SPECIES_CODES)
     if (!length(unk)) return(NULL)
     span(class = "other-unknown", title = "not a known code (saved anyway)",
          style = "background:#ffb300;color:#000;padding:1px 6px;border-radius:3px;font-size:11px;white-space:nowrap;",
          paste(unk, collapse = " "))
   })
-  # Leaving a box (Enter, Tab, a click) saves both boxes to the clip they belong to
-  # (rv$box_sid), not to whichever clip is active by then; the selection stays put.
-  .save_boxes <- function(ev, msg) {
-    req(rv$vdb, rv$box_sid)
-    save_note(rv$vdb, rv$box_sid, .notes_value(.box(ev, "other"), .box(ev, "notes")))
-    rv$status_message <- msg
-  }
-  observeEvent(input$save_other, .save_boxes(input$save_other, "\u2713 Other species saved"))
-  observeEvent(input$save_note,  .save_boxes(input$save_note,  "\u2713 Note saved"))
 
   # ---- audio ------------------------------------------------------------
   observeEvent(input$btn_play, {
@@ -1108,19 +1232,21 @@ server <- function(input, output, session) {
   observeEvent(input$btn_yes_call, .save_active(DETECTION, VOC_CALL))
   for (b in names(CODE_BUTTON)) local({
     id <- b; code <- CODE_BUTTON[[b]]
-    if (identical(code, "O")) {   # code-map. O: stay on the clip, cursor to Other species (R8)
+    if (identical(code, "O")) {   # code-map. O: focus into the other-species list, saves nothing (D9)
       observeEvent(input[[id]], {
-        if (!O_BUTTON_ON) return()
-        .save_active(code, advance = FALSE)
+        req(.has_active(), rv$box_sid)
         session$sendCustomMessage("focus_other", list())
       })
+    } else if (code %in% PARKED_CODES && !IP_BUTTONS_ON) {
+      return()                    # code-map: I / P parked (D8)
     } else observeEvent(input[[id]], .save_active(code))
   })
 
   observeEvent(input$btn_clear, {
     req(.has_active(), rv$vdb)
     smp <- rv$grid_samples[rv$active_position, ]
-    clear_classification(rv$vdb, smp$sample_id)
+    clear_classification(rv$vdb, smp$sample_id)     # also the clip's list rows and complete
+    rv$other_rev <- rv$other_rev + 1L
     for (nm in c("all_samples", "grid_samples")) {
       df <- rv[[nm]]; if (is.null(df)) next
       j <- which(df$sample_id == smp$sample_id)
@@ -1154,7 +1280,7 @@ server <- function(input, output, session) {
   observeEvent(input$btn_mark_c, .mark_all(DETECTION, VOC_CALL))
   for (k in c(NOT_TARGET, UNCERTAIN)) local({          # btn_mark_n / _o / _i / _p / _u
     code <- k
-    if (identical(code, "O") && !O_BUTTON_ON) return()   # code-map: Mark O switched off
+    if (code %in% PARKED_CODES && (code == CODE_BUTTON[["btn_other"]] || !IP_BUTTONS_ON)) return()   # Mark O/I/P parked
     observeEvent(input[[paste0("btn_mark_", tolower(code))]], .mark_all(code))
   })
 
@@ -1246,11 +1372,12 @@ server <- function(input, output, session) {
 
   output$species_select_ui <- renderUI({
     req(rv$scanned)
-    labs <- sprintf("%s \u2014 %s%s", rv$scanned$species, rv$scanned$db_name,
+    labs <- sprintf("%s \u2014 %s%s%s", rv$scanned$species, rv$scanned$db_name,
                     ifelse(is.na(rv$scanned$mode), "",
                            sprintf("  (%s%s)", rv$scanned$mode,
                                    ifelse(is.na(rv$scanned$n_clips), "",
-                                          sprintf(", %d clips", rv$scanned$n_clips)))))
+                                          sprintf(", %d clips", rv$scanned$n_clips)))),
+                    ifelse(rv$scanned$v3 %in% FALSE, "  \u2014 needs conversion (core/convert_db_v3.R)", ""))
     tagList(
       div(style = "margin-top:8px; font-weight:500;",
           sprintf("Found %d database(s):", nrow(rv$scanned))),

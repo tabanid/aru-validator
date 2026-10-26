@@ -11,7 +11,8 @@
 # is a `shared:` commit decided with Phil first — never a side effect of a stage edit.
 # =============================================================================
 
-ARU_CODES_VERSION <- 1L     # bump only when a name below changes meaning
+ARU_CODES_VERSION <- 2L     # bump only when a name below changes meaning
+                            # 2 (2026-10-26): other-list constants, PARKED_CODES, schema 3
 
 # ---- the six classification codes (contract §3, §4.2) ------------------------------
 CODE_MEANING <- c(Y = "target species",
@@ -30,6 +31,11 @@ RESOLVED_CODES <- c(DETECTION, NOT_TARGET)        # Y vs not-target: R3 fit set,
 # n_yn, project_status_app) keep today's numbers; R5 no longer uses it (2026-09-24).
 # Not a detection rule. Retire with those counters (Q12, Q18).
 LEGACY_DONE_CODES <- c("Y", "N")
+
+# Parked target codes (brief docs/CC_OTHER_LIST_BRIEF.md D8): still in CODE_MEANING so
+# old data reads, but the app's write gate refuses them for new labels (Part 3; unused
+# until then). What they stood for now goes in the other-species list.
+PARKED_CODES <- c("O", "I", "P")
 
 # ---- vocalisation type (recorded on Y clips) ----------------------------------------
 VOC_SONG  <- "S"
@@ -55,7 +61,9 @@ SQL_IN_LEGACY_DONE <- sql_in(LEGACY_DONE_CODES)   # "('Y','N')"
 SQL_IS_DETECTION   <- paste0(COL_CLASSIFICATION, " = '", DETECTION, "'")   # "classification = 'Y'"
 
 # ---- validation_meta (contract §5): build provenance, one row per DB ---------------
-SCHEMA_VERSION       <- 2L                        # 2 = adds schema_version + validation_sessions
+SCHEMA_VERSION       <- 3L                        # 2 = adds schema_version + validation_sessions
+                                                  # 3 = adds clip_others, clip_candidates,
+                                                  #     clips.others_complete (contract v4)
 VALIDATION_META_COLS <- c("mode", "grain", "species", "top_k", "threshold",
                           "build_date", "pipeline_version", "schema_version")
 
@@ -70,6 +78,35 @@ VALIDATION_SESSIONS_DDL  <- "
     session_end   TEXT,
     n_classified  INTEGER
   )"
+
+# ---- other species (contract v4 §4.4): one labelled row per species per clip ----------
+OTHER_LABELS  <- c("Y", "N", "U")                  # the target's own codes; no row = not assessed
+OTHER_SOURCES <- c("listed", "added", "legacy")    # in clip_candidates / typed / converter only
+# HawkEars non-bird classes, valid other-species codes beside spcdHE bird codes (D6).
+HE_NONBIRD_CODES <- c("Squirrel", "Canine", "Insects", "FROG-PEEP", "FROG-WOOD", "FROG-GREN",
+                      "FROG-GRTR", "FROG-BULL", "FROG-LEOP", "FROG-PICK", "TOAD-AMER",
+                      "Noise", "Speech", "Rooster", "Other")
+
+# Pipeline-owned, written at build/convert time, read-only for the app: the list shown.
+CLIP_CANDIDATES_DDL <- "
+  CREATE TABLE IF NOT EXISTS clip_candidates (
+    sample_id INTEGER NOT NULL REFERENCES clips(sample_id),
+    code      TEXT    NOT NULL,
+    he_score  REAL    NOT NULL,
+    PRIMARY KEY (sample_id, code)
+  )"
+
+# App-owned: the validator's answers. Blank = no row.
+CLIP_OTHERS_DDL <- "
+  CREATE TABLE IF NOT EXISTS clip_others (
+    sample_id     INTEGER NOT NULL REFERENCES clips(sample_id),
+    code          TEXT    NOT NULL,
+    label         TEXT    NOT NULL CHECK (label IN ('Y','N','U')),
+    source        TEXT    NOT NULL CHECK (source IN ('listed','added','legacy')),
+    classified_at TEXT    NOT NULL,
+    PRIMARY KEY (sample_id, code)
+  )"
+COL_OTHERS_COMPLETE <- "others_complete"           # clips: NULL / 0 / 1
 
 # ---- two helpers ----------------------------------------------------------------------
 #' Schema version of an open validation DB. Absent table, absent column or NULL -> 1L.

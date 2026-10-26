@@ -3,23 +3,28 @@
 # pipeline and the validator (ARCHITECTURE.md §1.1; brief
 # docs/R6_OTHER_HARVEST_BRIEF_2026-09-30.md).
 #
-# Validators record other species they are sure they heard as a first line of a
-# clip's notes: `other=BTNW,NAWA` (contract §4.2). R6 counts each code as an
-# occupancy detection of that species in the clip's unit x period; R3 never reads
-# notes. The app will reuse these to show such cells as resolved.
+# Validators label other species heard in a clip as rows of `clip_others` (contract
+# v4 §4.4, schema 3; brief docs/CC_OTHER_LIST_BRIEF.md). A `Y` row (any source) is a
+# borrowed detection: R6 counts it as an occupancy detection of that species in the
+# clip's unit x period, and the app shows such cells as resolved; R3 never reads it.
+# Older DBs (no clip_others table) are read the old way: a first line of notes
+# `other=BTNW,NAWA` (contract v3 §4.2, superseded). Finished, unconverted projects
+# keep working; nothing may write other= lines any more.
 #
-#   period_key(dates, grain)   Date -> period key (moved from core/build_effort_grid.R)
+#   period_key(dates, grain, anchor)  Date -> period key (moved from core/build_effort_grid.R)
 #   parse_other(notes)         one notes value -> the codes on a valid first line
-#   harvest_other(db_paths)    every other= code in the DBs, one row per code x clip
+#                              (legacy fallback and the v3 converter only)
+#   harvest_other(db_paths)    every borrowed detection in the DBs, one row per code x clip
 #   OTHER_DONOR_MODES          DB modes whose other= codes count
 #
 # Pure definitions: sourcing twice is harmless. DBI/RSQLite are used by namespace
 # inside harvest_other() only. A change here is a `shared:` commit decided with Phil.
 # =============================================================================
 
-# Modes whose other= codes count as detections. Drop "calibration" to stop Sample 1
+# Modes whose other-species detections count ("census" added 2026-10-26, Part 3 addendum b:
+# BITH census clips carried into one-round Sample 2 DBs). Drop "calibration" to stop Sample 1
 # donating (one line; brief decision 2).
-OTHER_DONOR_MODES <- c("calibration", "occupancy")
+OTHER_DONOR_MODES <- c("calibration", "occupancy", "census")
 
 # The first-line format (contract §4.2). Same pattern as the app's NOTES_OTHER_RE.
 OTHER_LINE_RE <- "^other=[A-Z0-9-]+(,[A-Z0-9-]+)*$"
@@ -27,12 +32,20 @@ OTHER_LINE_RE <- "^other=[A-Z0-9-]+(,[A-Z0-9-]+)*$"
 #' Collapse Dates to the chosen period key.
 #' @param dates a Date (or "YYYY-MM-DD") vector.
 #' @param grain "week" (ISO week, e.g. 2025-W23), "5day" (5-day blocks within a
-#'   year, e.g. 2025-P34), or "day" (the date).
+#'   year, e.g. 2025-P34), "day" (the date), or "anchored_week" (7-day weeks
+#'   counted from `anchor`: W1 = anchor .. anchor + 6, as sample1_draw's occasions).
+#' @param anchor the first day of W1 (Date or "YYYY-MM-DD"); "anchored_week" only.
 #' Note: "%Y-W%V" pairs the calendar year with the ISO week; at a year boundary the
 #' ISO year (%G) can differ. Kept as is: R4 wrote the DBs' time_period with it.
-period_key <- function(dates, grain) {
+period_key <- function(dates, grain, anchor = NULL) {
   dates <- as.Date(dates)
   if (grain == "day")  return(as.character(dates))
+  if (grain == "anchored_week") {
+    if (is.null(anchor) || length(anchor) != 1L || is.na(as.Date(anchor)))
+      stop("period_key: grain 'anchored_week' needs one anchor date")
+    k <- as.integer(dates - as.Date(anchor)) %/% 7L + 1L
+    return(ifelse(is.na(k), NA_character_, paste0("W", k)))
+  }
   if (grain == "5day") {
     doy <- as.integer(format(dates, "%j"))
     blk <- ((doy - 1L) %/% 5L) + 1L
@@ -43,6 +56,7 @@ period_key <- function(dates, grain) {
 
 #' One notes value -> the species codes on a valid first `other=` line, else
 #' character(0). Anything else (not the first line, lower case, spaces) is free text.
+#' Reads old (schema < 3) DBs only: the legacy fallback below and core/convert_db_v3.R.
 parse_other <- function(notes) {
   if (is.null(notes) || length(notes) == 0 || is.na(notes[1]) || !nzchar(notes[1]))
     return(character(0))
@@ -79,7 +93,20 @@ parse_other <- function(notes) {
   if (length(s)) as.character(s[1]) else NA_character_
 }
 
-# One DB, read-only: its mode, species and the clips whose notes start "other=".
+# schema_version of an open DB (as shared/codes.R aru_schema_version(); repeated so
+# this file also works sourced on its own).
+.other_schema_version <- function(con, tabs) {
+  if (!"validation_meta" %in% tabs) return(1L)
+  if (!"schema_version" %in% DBI::dbListFields(con, "validation_meta")) return(1L)
+  v <- DBI::dbGetQuery(con, "SELECT schema_version FROM validation_meta LIMIT 1")$schema_version
+  if (!length(v) || is.na(v[1])) 1L else as.integer(v[1])
+}
+
+# One DB, read-only: its mode, species, which reader, and one row per code x clip
+# (sample_id, unit, date, file_name, classified_at, code). The reader is chosen by the
+# table, not the stamp: clip_others present -> its Y rows (notes ignored); a schema >= 3
+# stamp without the table is an error (skipped, never read as legacy); otherwise the
+# legacy other= first line of notes. `n_lines` / `n_invalid` feed the scan tally.
 .other_read_db <- function(p) {
   if (!file.exists(p)) stop("file not found")
   con <- DBI::dbConnect(RSQLite::SQLite(), p, flags = RSQLite::SQLITE_RO, synchronous = NULL)
@@ -87,15 +114,31 @@ parse_other <- function(notes) {
   tabs <- DBI::dbListTables(con)
   if (!"clips" %in% tabs) stop("no clips table")
   cols <- DBI::dbListFields(con, "clips")
+  opt <- function(col) if (col %in% cols) paste0("c.", col) else paste0("NULL AS ", col)
+  out <- list(md = .other_db_mode(con, tabs, cols), sp = .other_db_species(con, tabs))
+  if ("clip_others" %in% tabs) {
+    cl <- DBI::dbGetQuery(con, paste0(
+      "SELECT c.sample_id, c.unit, c.date, ", opt("file_name"), ", o.classified_at, o.code",
+      " FROM clip_others o JOIN clips c ON c.sample_id = o.sample_id",
+      " WHERE o.label = 'Y' ORDER BY c.sample_id, o.code"))
+    return(c(out, list(reader = "clip_others", cl = cl,
+                       n_lines = length(unique(cl$sample_id)), n_invalid = 0L)))
+  }
+  if (.other_schema_version(con, tabs) >= 3L) stop("schema 3 without clip_others")
   if (!"notes" %in% cols) stop("clips has no notes column")
-  opt <- function(col) if (col %in% cols) col else paste0("NULL AS ", col)
-  list(md = .other_db_mode(con, tabs, cols), sp = .other_db_species(con, tabs),
-       cl = DBI::dbGetQuery(con, paste0(
-         "SELECT sample_id, unit, date, notes, ", opt("file_name"), ", ", opt("classified_at"),
-         " FROM clips WHERE notes LIKE 'other=%' ORDER BY sample_id")))
+  nl <- DBI::dbGetQuery(con, paste0(
+    "SELECT c.sample_id, c.unit, c.date, c.notes, ", opt("file_name"), ", ", opt("classified_at"),
+    " FROM clips c WHERE c.notes LIKE 'other=%' ORDER BY c.sample_id"))
+  codes <- lapply(nl$notes, parse_other)
+  k <- rep(seq_len(nrow(nl)), lengths(codes))
+  cl <- nl[k, c("sample_id", "unit", "date", "file_name", "classified_at"), drop = FALSE]
+  cl$code <- as.character(unlist(codes))
+  c(out, list(reader = "legacy_notes", cl = cl, n_lines = nrow(nl),
+              n_invalid = sum(lengths(codes) == 0L)))
 }
 
-#' Every other= code in the DBs, read-only.
+#' Every borrowed detection in the DBs, read-only: clip_others Y rows (schema 3), or
+#' other= first lines of notes in older DBs.
 #' @param db_paths validation DB paths (any mode, any species).
 #' @param modes    donor modes kept (default OTHER_DONOR_MODES).
 #' @param quiet    TRUE suppresses the per-DB skip messages.
@@ -103,7 +146,8 @@ parse_other <- function(notes) {
 #'   unit, date (text as stored), source_species, source_db, source_mode,
 #'   mode_source, source_sample_id, source_file_name, classified_at. Attribute
 #'   "scan": one row per DB (db, species, mode, mode_source, status ok/skipped/
-#'   excluded_mode, reason, n_other_lines, n_invalid_lines, n_rows).
+#'   excluded_mode, reason, reader clip_others/legacy_notes/NA when skipped,
+#'   n_other_lines = donor clips, n_invalid_lines (legacy only), n_rows).
 #' A DB that fails to open or has no clips table is skipped with a message; no DB
 #' is ever opened read-write.
 harvest_other <- function(db_paths, modes = OTHER_DONOR_MODES, quiet = FALSE) {
@@ -115,7 +159,7 @@ harvest_other <- function(db_paths, modes = OTHER_DONOR_MODES, quiet = FALSE) {
   rows <- list(); scan <- list()
   for (p in unique(db_paths)) {
     sc <- list(db = p, species = NA_character_, mode = NA_character_, mode_source = NA_character_,
-               status = "ok", reason = NA_character_, n_other_lines = 0L,
+               status = "ok", reason = NA_character_, reader = NA_character_, n_other_lines = 0L,
                n_invalid_lines = 0L, n_rows = 0L)
     res <- tryCatch(.other_read_db(p), error = function(e) e)
     if (inherits(res, "error")) {
@@ -124,24 +168,21 @@ harvest_other <- function(db_paths, modes = OTHER_DONOR_MODES, quiet = FALSE) {
       scan[[length(scan) + 1L]] <- sc; next
     }
     sc$species <- res$sp; sc$mode <- res$md$mode; sc$mode_source <- res$md$source
+    sc$reader <- res$reader
     cl <- res$cl
-    sc$n_other_lines <- nrow(cl)
-    codes <- lapply(cl$notes, parse_other)
-    sc$n_invalid_lines <- sum(lengths(codes) == 0L)
+    sc$n_other_lines <- as.integer(res$n_lines)
+    sc$n_invalid_lines <- as.integer(res$n_invalid)
     if (!res$md$mode %in% modes) {
       sc$status <- "excluded_mode"
     } else if (nrow(cl)) {
-      k <- rep(seq_len(nrow(cl)), lengths(codes))
-      if (length(k)) {
-        rows[[length(rows) + 1L]] <- data.frame(
-          recipient_species = unlist(codes), unit = as.character(cl$unit[k]),
-          date = as.character(cl$date[k]), source_species = res$sp, source_db = p,
-          source_mode = res$md$mode, mode_source = res$md$source,
-          source_sample_id = as.integer(cl$sample_id[k]),
-          source_file_name = as.character(cl$file_name[k]),
-          classified_at = as.character(cl$classified_at[k]), stringsAsFactors = FALSE)
-        sc$n_rows <- length(k)
-      }
+      rows[[length(rows) + 1L]] <- data.frame(
+        recipient_species = as.character(cl$code), unit = as.character(cl$unit),
+        date = as.character(cl$date), source_species = res$sp, source_db = p,
+        source_mode = res$md$mode, mode_source = res$md$source,
+        source_sample_id = as.integer(cl$sample_id),
+        source_file_name = as.character(cl$file_name),
+        classified_at = as.character(cl$classified_at), stringsAsFactors = FALSE)
+      sc$n_rows <- nrow(cl)
     }
     scan[[length(scan) + 1L]] <- sc
   }
@@ -150,7 +191,7 @@ harvest_other <- function(db_paths, modes = OTHER_DONOR_MODES, quiet = FALSE) {
   sdf <- if (length(scan)) do.call(rbind, lapply(scan, as.data.frame, stringsAsFactors = FALSE))
          else data.frame(db = character(0), species = character(0), mode = character(0),
                          mode_source = character(0), status = character(0), reason = character(0),
-                         n_other_lines = integer(0), n_invalid_lines = integer(0),
+                         reader = character(0), n_other_lines = integer(0), n_invalid_lines = integer(0),
                          n_rows = integer(0), stringsAsFactors = FALSE)
   attr(out, "scan") <- sdf
   out

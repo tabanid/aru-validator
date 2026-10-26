@@ -2,8 +2,8 @@
 
 A small app for checking bird detections from autonomous recording units (ARUs).
 It opens a validation database (one SQLite `.db` file per species), plays each short
-clip with its spectrogram, and saves your label (yes / no / other bird / insect /
-peeper / unsure) straight back into the database.
+clip with its spectrogram, and saves your label (yes / no / unsure), and the other
+species you heard on the clip, straight back into the database.
 
 ## Install or update
 

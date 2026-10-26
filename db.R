@@ -30,9 +30,10 @@ local({
   source(hit[1], local = FALSE)
 })
 
-# ---- shared/other.R: the other= reader and period_key, one copy with R6 ----
-# harvest_other() (read-only), period_key(), OTHER_DONOR_MODES, OTHER_LINE_RE. Found
-# like codes.R; deploy.sh puts other.R beside the app.
+# ---- shared/other.R: the other-species reader and period_key, one copy with R6 ----
+# harvest_other() (read-only: clip_others Y rows on schema 3, the legacy other= line on
+# older DBs), period_key(), OTHER_DONOR_MODES, OTHER_LINE_RE. Found like codes.R;
+# deploy.sh puts other.R beside the app.
 local({
   cands <- c("other.R", "../../shared/other.R", "shared/other.R",
              file.path(Sys.getenv("ARU_REPO", unset = ""), "shared", "other.R"))
@@ -48,6 +49,9 @@ local({
 CODE_COLOUR <- c(Y = "#4caf50", N = "#dc3545", O = "#2196f3",   # code-map
                  I = "#2196f3", P = "#9c27b0", U = "#ff9800")   # code-map
 stopifnot(setequal(names(CODE_COLOUR), ALL_CODES))
+# The write gate for new labels: O, I and P stay readable (CODE_MEANING) but are parked
+# (brief D8); what they stood for goes in the other-species list.
+WRITE_CODES <- setdiff(ALL_CODES, PARKED_CODES)
 
 `%||%` <- function(a, b) {
   if (is.null(a) || length(a) == 0) return(b)
@@ -76,6 +80,16 @@ open_validation_db <- function(db_path) {
     dbDisconnect(con)
     stop("No 'clips' table in ", basename(db_path),
          " — this does not look like a validation database.")
+  }
+
+  # Schema gate (contract v4 §4.4): the tool opens schema-3 DBs only. Decided by the
+  # table, as harvest_other() reads (Phil 2026-10-26): a DB without clip_others is
+  # older, or stamped 3 without its tables. Nothing has been written at this point.
+  if (!all(c("clip_others", "clip_candidates") %in% tabs)) {
+    v <- aru_schema_version(con)
+    dbDisconnect(con)
+    stop(basename(db_path), " is schema ", v, " (no other-species tables): this tool opens schema 3 only.",
+         "\nConvert a copy first with core/convert_db_v3.R, then open the copy.")
   }
 
   vdb <- structure(
@@ -264,9 +278,10 @@ get_clip <- function(vdb, sample_id) {
 save_classification <- function(vdb, sample_id, classification,
                                 vocalization_type = NULL, notes = NULL,
                                 update_notes = FALSE) {
-  if (!classification %in% ALL_CODES)
+  if (!classification %in% WRITE_CODES)
     stop("Invalid classification '", classification, "'. Must be one of ",
-         paste(ALL_CODES, collapse = "/"), ".")
+         paste(WRITE_CODES, collapse = "/"),
+         if (classification %in% PARKED_CODES) " (O, I and P are parked: use the other-species list)", ".")
 
   if (is.null(vocalization_type)) vocalization_type <- NA_character_
   if (!is.na(vocalization_type) && vocalization_type == "")
@@ -294,8 +309,12 @@ save_classification <- function(vdb, sample_id, classification,
   invisible(TRUE)
 }
 
-#' Un-classify a clip (explicit user re-open). Blanks the five fields.
+#' Un-classify a clip (explicit user re-open). Blanks the five fields, deletes the
+#' clip's clip_others rows (all sources) and sets others_complete to NULL (v4 §4.4).
 clear_classification <- function(vdb, sample_id) {
+  dbExecute(vdb$conn, "DELETE FROM clip_others WHERE sample_id = ?", params = list(as.integer(sample_id)))
+  dbExecute(vdb$conn, paste("UPDATE clips SET", COL_OTHERS_COMPLETE, "= NULL WHERE sample_id = ?"),
+            params = list(as.integer(sample_id)))
   dbExecute(vdb$conn, "
     UPDATE clips
        SET classified        = 0,
@@ -316,43 +335,76 @@ save_note <- function(vdb, sample_id, notes) {
   invisible(TRUE)
 }
 
-# ---- "Other species" (brief R8) -------------------------------------------
-# Species heard in a clip besides the target, kept in `notes` as a first line
-# `other=BTNW,NAWA`, then the free-text comment (VALIDATION_TOOL_CONTRACT.md, notes).
-# Only a first line matching NOTES_OTHER_RE is read as codes; anything else is free text.
-NOTES_OTHER_RE <- OTHER_LINE_RE   # shared/other.R: the same pattern R6 reads
+# ---- the other-species list (contract v4 §4.4; brief docs/CC_OTHER_LIST_BRIEF.md) ----
+# One labelled row per species per clip in clip_others (Y / N / U; no row = not
+# assessed). The list shown = clip_candidates (pipeline-owned, read-only here) plus
+# the clip's 'added' and 'legacy' rows. notes is free text only: no other= line.
+NOTES_OTHER_RE <- OTHER_LINE_RE   # shared/other.R; read by the legacy reader only
 
-#' Codes typed in the Other species box -> clean vector: upper-cased, split on spaces,
-#' commas or semicolons, characters outside A-Z 0-9 - dropped, de-duplicated, the
-#' target's own code removed.
+#' Codes typed in the Add box -> clean vector: upper-cased, split on spaces, commas or
+#' semicolons, characters outside A-Z 0-9 - dropped, de-duplicated, the target's own
+#' code removed. HawkEars non-bird classes match whatever the case and come back in
+#' HawkEars' spelling (squirrel -> Squirrel, frog-peep -> FROG-PEEP; Phil 2026-10-26).
 parse_other_codes <- function(txt, target = NULL) {
   if (is.null(txt) || length(txt) == 0 || is.na(txt[1])) return(character(0))
   tok <- strsplit(toupper(txt[1]), "[[:space:],;]+")[[1]]
   tok <- gsub("[^A-Z0-9-]", "", tok)
-  tok <- unique(tok[nzchar(tok)])
-  if (!is.null(target) && length(target) == 1 && !is.na(target)) tok <- setdiff(tok, toupper(target))
+  tok <- tok[nzchar(tok)]
+  nb <- match(tok, toupper(HE_NONBIRD_CODES))
+  tok[!is.na(nb)] <- HE_NONBIRD_CODES[nb[!is.na(nb)]]
+  tok <- unique(tok)
+  if (!is.null(target) && length(target) == 1 && !is.na(target)) tok <- tok[toupper(tok) != toupper(target)]
   tok
 }
 
-#' notes -> list(other = codes, free = comment text).
-split_notes <- function(notes) {
-  if (is.null(notes) || length(notes) == 0 || is.na(notes[1]) || !nzchar(notes[1]))
-    return(list(other = character(0), free = ""))
-  lines <- strsplit(notes[1], "\n", fixed = TRUE)[[1]]
-  if (length(lines) && grepl(NOTES_OTHER_RE, lines[1]))
-    return(list(other = strsplit(sub("^other=", "", lines[1]), ",", fixed = TRUE)[[1]],
-                free  = paste(lines[-1], collapse = "\n")))
-  list(other = character(0), free = notes[1])
+#' The list for one clip: candidates (sorted by code), then added / legacy rows not
+#' among them (sorted by code). data.frame(code, label (NA = blank), source
+#' ('listed' for candidates, else the row's source), listed (TRUE = a candidate)).
+other_list <- function(vdb, sample_id) {
+  sid <- as.integer(sample_id)
+  cand <- dbGetQuery(vdb$conn, "SELECT code FROM clip_candidates WHERE sample_id = ? ORDER BY code",
+                     params = list(sid))$code
+  rows <- dbGetQuery(vdb$conn, "SELECT code, label, source FROM clip_others WHERE sample_id = ? ORDER BY code",
+                     params = list(sid))
+  extra <- rows[!rows$code %in% cand, , drop = FALSE]
+  data.frame(code   = c(cand, extra$code),
+             label  = c(rows$label[match(cand, rows$code)], extra$label),
+             source = c(rep("listed", length(cand)), extra$source),
+             listed = c(rep(TRUE, length(cand)), rep(FALSE, nrow(extra))),
+             stringsAsFactors = FALSE)
 }
 
-#' codes + comment -> the notes value (NA when both are empty). No codes -> no other= line.
-compose_notes <- function(other, free) {
-  free <- if (is.null(free) || length(free) == 0 || is.na(free[1])) "" else free[1]
-  other <- other[!is.na(other) & nzchar(other)]
-  out <- if (length(other)) paste0("other=", paste(other, collapse = ","),
-                                   if (nzchar(free)) paste0("\n", free) else "")
-         else free
-  if (nzchar(out)) out else NA_character_
+#' Set one list row. label Y / N / U writes the row (source 'listed' when the code is
+#' a candidate for the clip, else 'added'; a legacy row keeps 'legacy'); label NULL or
+#' NA deletes it (blank). Never touches the target classification.
+set_other <- function(vdb, sample_id, code, label = NULL) {
+  sid <- as.integer(sample_id)
+  if (is.null(label) || is.na(label)) {
+    dbExecute(vdb$conn, "DELETE FROM clip_others WHERE sample_id = ? AND code = ?", params = list(sid, code))
+    return(invisible(TRUE))
+  }
+  if (!label %in% OTHER_LABELS) stop("other-species label must be one of ", paste(OTHER_LABELS, collapse = "/"))
+  listed <- nrow(dbGetQuery(vdb$conn, "SELECT 1 FROM clip_candidates WHERE sample_id = ? AND code = ?",
+                            params = list(sid, code))) > 0
+  old <- dbGetQuery(vdb$conn, "SELECT source FROM clip_others WHERE sample_id = ? AND code = ?",
+                    params = list(sid, code))$source
+  src <- if (listed) "listed" else if (identical(old, "legacy")) "legacy" else "added"
+  dbExecute(vdb$conn, "INSERT OR REPLACE INTO clip_others (sample_id, code, label, source, classified_at)
+                       VALUES (?, ?, ?, ?, ?)", params = list(sid, code, label, src, .iso_now()))
+  invisible(TRUE)
+}
+
+#' clips.others_complete for one clip: 1 / 0 (NULL only via clear_classification()).
+set_others_complete <- function(vdb, sample_id, value) {
+  dbExecute(vdb$conn, paste("UPDATE clips SET", COL_OTHERS_COMPLETE, "= ? WHERE sample_id = ?"),
+            params = list(as.integer(isTRUE(value)), as.integer(sample_id)))
+  invisible(TRUE)
+}
+
+get_others_complete <- function(vdb, sample_id) {
+  v <- dbGetQuery(vdb$conn, paste("SELECT", COL_OTHERS_COMPLETE, "AS v FROM clips WHERE sample_id = ?"),
+                  params = list(as.integer(sample_id)))$v
+  isTRUE(length(v) == 1 && !is.na(v) && v == 1)
 }
 
 #' HawkEars species codes (spcdHE of allBNHsp.csv), found like codes.R: beside the app,
@@ -416,9 +468,10 @@ group_complete <- function(group_row) {
   list(complete = FALSE, reason = NA_character_)
 }
 
-# ---- borrowed other= detections (live surfacing, Sample 2 only) ---------------
-# A species named in another clip's other= line (any DB under the index folder,
-# calibration or occupancy: OTHER_DONOR_MODES) is present in that clip's unit x
+# ---- borrowed other-species detections (live surfacing, Sample 2 only) --------
+# A species with a Y row in another clip's clip_others (or, in a schema < 3 DB, named
+# in its other= line) in any DB under the index folder (calibration or occupancy:
+# OTHER_DONOR_MODES) is present in that clip's unit x
 # occasion. In occupancy mode the app shows such cells of the open species as
 # resolved and skips them. Read-only: nothing here writes to any DB. R6 does the
 # authoritative harvest with the same harvest_other().
@@ -474,13 +527,13 @@ build_other_index <- function(root, species) {
 #' clip there, no date, outside the season) is counted as out of grid.
 #' @return list(cells = data.frame(unit, time_period, n_borrowed, provenance),
 #'   rows = idx + period + in_grid, n_out = rows out of grid)
-borrowed_cells <- function(idx, grain, groups) {
+borrowed_cells <- function(idx, grain, groups, anchor = NULL) {
   empty <- data.frame(unit = character(0), time_period = character(0),
                       n_borrowed = integer(0), provenance = character(0), stringsAsFactors = FALSE)
   if (is.null(idx) || !nrow(idx)) return(list(cells = empty, rows = idx, n_out = 0L))
   d <- as.Date(idx$date, format = "%Y-%m-%d")
   idx$period <- NA_character_
-  if (any(!is.na(d))) idx$period[!is.na(d)] <- period_key(d[!is.na(d)], grain)
+  if (any(!is.na(d))) idx$period[!is.na(d)] <- period_key(d[!is.na(d)], grain, anchor)
   gk <- paste(groups$unit, groups$time_period, sep = "\r")
   idx$in_grid <- !is.na(idx$period) & paste(idx$unit, idx$period, sep = "\r") %in% gk
   ig <- idx[idx$in_grid, , drop = FALSE]
@@ -514,16 +567,19 @@ apply_borrowed <- function(groups, cells) {
 }
 
 #' Safety check before surfacing: the open DB's own time_period must equal
-#' period_key(date, grain) for every dated clip, or borrowed cells would land on
-#' the wrong occasion. list(ok, n_checked, n_mismatch, example).
-grain_check <- function(vdb, grain) {
+#' period_key(date, grain, anchor) for every dated clip, or borrowed cells would land
+#' on the wrong occasion. anchor = validation_meta.anchor_date ("anchored_week" only).
+#' list(ok, n_checked, n_mismatch, example).
+grain_check <- function(vdb, grain, anchor = NULL) {
   bad <- function(n, m, ex) list(ok = FALSE, n_checked = n, n_mismatch = m, example = ex)
   if (!all(c("date", "time_period") %in% vdb$cols)) return(bad(0L, NA_integer_, "no date/time_period column"))
+  if (identical(grain, "anchored_week") && (is.null(anchor) || is.na(anchor) || !nzchar(anchor)))
+    return(bad(0L, NA_integer_, "grain anchored_week but no validation_meta.anchor_date"))
   x <- dbGetQuery(vdb$conn, "SELECT date, time_period FROM clips")
   d <- as.Date(x$date, format = "%Y-%m-%d")
   x <- x[!is.na(d), , drop = FALSE]; d <- d[!is.na(d)]
   if (!nrow(x)) return(bad(0L, NA_integer_, "no dated clips"))
-  pk <- period_key(d, grain %||% "week")
+  pk <- period_key(d, grain %||% "week", anchor)
   mis <- is.na(x$time_period) | x$time_period != pk
   ex <- if (any(mis)) sprintf("%s -> %s, DB has %s", x$date[mis][1], pk[mis][1], x$time_period[mis][1]) else NA_character_
   list(ok = !any(mis), n_checked = nrow(x), n_mismatch = sum(mis), example = ex)
@@ -674,19 +730,28 @@ score_distribution <- function(vdb) {
   list(thresholds = th, bins = bins, total = length(s), range = range(s))
 }
 
-#' Export all classified clips to a CSV (mirrors the old consolidated export).
-#' Returns the number of rows written.
+#' Export all classified clips to a CSV (mirrors the old consolidated export): one
+#' flat table, so the other-species list goes in two columns (v4 §4.4): `others` =
+#' CODE:LABEL pairs sorted by code (REVI:Y;SWTH:N; empty when none) and
+#' `others_complete`. Returns the number of rows written.
 export_results <- function(vdb, output_path) {
-  want <- c("spcd", "fn", "newfn", "file_name", "unit", "date", "time_period",
+  want <- c("sample_id", "spcd", "fn", "newfn", "file_name", "unit", "date", "time_period",
             "score", "BNscore", "solar_label", "solar_period",
             "sample1_nominee", "sample2_active", "nominating_model",
             "classification", "vocalization_type", "notes", "classified",
-            "classified_at")
+            "classified_at", COL_OTHERS_COMPLETE)
   cols <- want[want %in% vdb$cols]
   q <- sprintf("SELECT %s FROM clips WHERE classified = 1
                 ORDER BY unit, time_period, score DESC",
                paste(cols, collapse = ", "))
   res <- dbGetQuery(vdb$conn, q)
+  oth <- dbGetQuery(vdb$conn, "SELECT sample_id, code, label FROM clip_others ORDER BY sample_id, code")
+  pairs <- if (nrow(oth)) tapply(paste0(oth$code, ":", oth$label), oth$sample_id, paste, collapse = ";")
+           else character(0)
+  res$others <- unname(ifelse(as.character(res$sample_id) %in% names(pairs),
+                              pairs[as.character(res$sample_id)], ""))
+  res <- res[, c(setdiff(names(res), c("sample_id", COL_OTHERS_COMPLETE, "others")),
+                 "others", intersect(COL_OTHERS_COMPLETE, names(res))), drop = FALSE]
   utils::write.csv(res, output_path, row.names = FALSE)
   nrow(res)
 }
@@ -712,17 +777,19 @@ export_results <- function(vdb, output_path) {
   n <- tryCatch(dbGetQuery(con, "SELECT COUNT(*) AS n FROM clips")$n,
                 error = function(e) NA_integer_)
   mode <- NA_character_
+  v3 <- "clip_others" %in% tabs                     # the schema gate's test (open_validation_db)
   if ("validation_meta" %in% tabs) {
     m <- tryCatch(dbGetQuery(con, "SELECT mode FROM validation_meta LIMIT 1")$mode,
                   error = function(e) NA_character_)
     if (length(m) && !is.na(m) && nzchar(as.character(m))) mode <- as.character(m)
   }
   list(species = if (length(spcd) && !is.na(spcd) && nzchar(spcd)) as.character(spcd) else NULL,
-       mode = mode, n_clips = if (length(n) && !is.na(n)) as.integer(n) else NA_integer_)
+       mode = mode, n_clips = if (length(n) && !is.na(n)) as.integer(n) else NA_integer_, v3 = v3)
 }
 
 #' Scan `root` (and its immediate subdirectories) for validation DBs.
-#' Returns a data.frame (species, db_path, db_name, subdir, mode, n_clips),
+#' Returns a data.frame (species, db_path, db_name, subdir, mode, n_clips, v3 = has the
+#' schema-3 tables, else the app refuses it: "needs conversion"),
 #' species/db sorted, or NULL if none found. Clip WAVs are assumed to sit beside
 #' each .db (the contract layout), so a species subdir is self-contained.
 scan_species_dbs <- function(root) {
@@ -737,7 +804,7 @@ scan_species_dbs <- function(root) {
       rows[[length(rows) + 1L]] <- data.frame(
         species = sp, db_path = normalizePath(db), db_name = basename(db),
         subdir = basename(d), mode = info$mode %||% NA_character_,
-        n_clips = info$n_clips %||% NA_integer_, stringsAsFactors = FALSE)
+        n_clips = info$n_clips %||% NA_integer_, v3 = isTRUE(info$v3), stringsAsFactors = FALSE)
     }
   }
   if (!length(rows)) return(NULL)
