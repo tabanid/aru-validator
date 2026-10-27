@@ -1148,13 +1148,13 @@ server <- function(input, output, session) {
     rv$other_rev
     req(rv$vdb, rv$box_sid)
     v <- others_complete_value(rv$vdb, rv$box_sid)
-    lit <- if (is.na(v)) "" else if (v == 1L) "Y" else "N"
+    lit <- if (is.na(v)) "" else if (v == 1L) "Y" else "N"                  # code-map: COMPLETE 1/0
     btn <- function(l) tags$button(type = "button", tabindex = "-1", l,
       class = paste("other-btn", if (identical(lit, l)) paste0("on-", l)),
       onmousedown = "event.preventDefault();",
       onclick = sprintf("Shiny.setInputValue('other_complete_set',{v:'%s',sid:%d,n:Math.random()},{priority:'event'})", l, rv$box_sid))
     div(class = "other-row other-complete", title = "Y: every species heard on this clip is labelled or added",
-        span(class = "other-code", "COMPLETE"), btn("Y"), btn("N"))
+        span(class = "other-code", "COMPLETE"), btn("Y"), btn("N"))         # code-map: COMPLETE buttons
   })
   .other_sid <- function(ev) { s <- suppressWarnings(as.integer(ev$sid)); if (length(s) == 1 && !is.na(s)) s else rv$box_sid }
   observeEvent(input$other_set, {
@@ -1178,7 +1178,7 @@ server <- function(input, output, session) {
   })
   observeEvent(input$other_complete_set, {
     req(rv$vdb); ev <- input$other_complete_set; sid <- .other_sid(ev); req(sid)
-    want <- if (identical(ev$v, "Y")) 1L else if (identical(ev$v, "N")) 0L else return()
+    want <- if (identical(ev$v, "Y")) 1L else if (identical(ev$v, "N")) 0L else return()   # code-map: COMPLETE 1/0
     cur <- others_complete_value(rv$vdb, sid)
     set_others_complete(rv$vdb, sid, if (identical(cur, want)) NA else want == 1L)   # lit again -> blank
     rv$other_rev <- rv$other_rev + 1L
