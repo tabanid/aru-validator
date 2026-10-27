@@ -1,10 +1,10 @@
 # =============================================================================
 # shared/other.R — the `other=` reader and the period key, one copy for the
 # pipeline and the validator (ARCHITECTURE.md §1.1; brief
-# docs/R6_OTHER_HARVEST_BRIEF_2026-09-30.md).
+# docs/briefs_done/R6_OTHER_HARVEST_BRIEF_2026-09-30.md).
 #
 # Validators label other species heard in a clip as rows of `clip_others` (contract
-# v4 §4.4, schema 3; brief docs/CC_OTHER_LIST_BRIEF.md). A `Y` row (any source) is a
+# v4 §4.4, schema 3; brief docs/briefs_done/CC_OTHER_LIST_BRIEF.md). A `Y` row (any source) is a
 # borrowed detection: R6 counts it as an occupancy detection of that species in the
 # clip's unit x period, and the app shows such cells as resolved; R3 never reads it.
 # Older DBs (no clip_others table) are read the old way: a first line of notes

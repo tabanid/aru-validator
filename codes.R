@@ -32,7 +32,7 @@ RESOLVED_CODES <- c(DETECTION, NOT_TARGET)        # Y vs not-target: R3 fit set,
 # Not a detection rule. Retire with those counters (Q12, Q18).
 LEGACY_DONE_CODES <- c("Y", "N")
 
-# Parked target codes (brief docs/CC_OTHER_LIST_BRIEF.md D8): still in CODE_MEANING so
+# Parked target codes (brief docs/briefs_done/CC_OTHER_LIST_BRIEF.md D8): still in CODE_MEANING so
 # old data reads, but the app's write gate refuses them for new labels (Part 3; unused
 # until then). What they stood for now goes in the other-species list.
 PARKED_CODES <- c("O", "I", "P")
@@ -107,6 +107,14 @@ CLIP_OTHERS_DDL <- "
     PRIMARY KEY (sample_id, code)
   )"
 COL_OTHERS_COMPLETE <- "others_complete"           # clips: NULL / 0 / 1
+
+# ---- one-round species classes (docs/VALIDATION_WORKFLOW.md §W2) ----------------------
+# Read by core/R2_species_classes.R, R3_occupancy_draw.R, R6 and R7. Ladder rare_vet -> sweep ->
+# standard (Phil's edits to the approved file). "rare" (the site sweep's name before
+# 2026-10-27) is read as "sweep" in an approved file.
+OCC_CLASSES       <- c("standard", "sweep", "rare_vet", "no_signal", "no_cluster", "skip", "untriaged")
+OCC_DRAWN_CLASSES <- c("standard", "sweep", "rare_vet")   # the classes that get a DB
+OCC_CLASS_ALIASES <- c(rare = "sweep")
 
 # ---- two helpers ----------------------------------------------------------------------
 #' Schema version of an open validation DB. Absent table, absent column or NULL -> 1L.

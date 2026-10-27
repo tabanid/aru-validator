@@ -335,7 +335,7 @@ save_note <- function(vdb, sample_id, notes) {
   invisible(TRUE)
 }
 
-# ---- the other-species list (contract v4 §4.4; brief docs/CC_OTHER_LIST_BRIEF.md) ----
+# ---- the other-species list (contract v4 §4.4; brief docs/briefs_done/CC_OTHER_LIST_BRIEF.md) ----
 # One labelled row per species per clip in clip_others (Y / N / U; no row = not
 # assessed). The list shown = clip_candidates (pipeline-owned, read-only here) plus
 # the clip's 'added' and 'legacy' rows. notes is free text only: no other= line.
@@ -612,7 +612,7 @@ calibration_progress <- function(vdb) {
 # simply don't exist here and are skipped.
 
 # Resource prefix the app serves each audio dir under (names match audio_dirs()).
-AUDIO_PREFIXES <- c(beside = "audio_files", clips = "audio_files_clips",
+AUDIO_PREFIXES <- c(beside = "audio_files", design = "audio_files_design", clips = "audio_files_clips",
                     fallback = "audio_files_fb")
 
 #' Species code of a DB: validation_meta.species, else the DB file name up to the
@@ -628,8 +628,13 @@ db_species <- function(vdb) {
 
 #' The audio dirs that exist for this DB, in resolution order, named as in
 #' AUDIO_PREFIXES. Computed once at open (open_validation_db stores it on vdb).
+#' A -sweep.db / -rarevet.db looks in clips/{SPCD}-sweep/ or clips/{SPCD}-rarevet/ before
+#' clips/{SPCD}/ (docs/VALIDATION_WORKFLOW.md §W10: each design has its own clips folder, so
+#' an upgraded species' clips/{SPCD}/ never serves the sweep's clip-NNNN.wav).
 audio_dirs <- function(vdb) {
+  stem <- tools::file_path_sans_ext(basename(vdb$path %||% ""))
   cand <- c(beside = vdb$db_dir,
+            design = if (grepl("-(sweep|rarevet)$", stem)) file.path(dirname(vdb$db_dir), "clips", stem) else NA_character_,
             clips  = file.path(dirname(vdb$db_dir), "clips", vdb$spcd %||% db_species(vdb)),
             fallback = .audio_folder_fallback(vdb))
   cand[!is.na(cand) & dir.exists(cand)]
