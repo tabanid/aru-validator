@@ -394,11 +394,20 @@ set_other <- function(vdb, sample_id, code, label = NULL) {
   invisible(TRUE)
 }
 
-#' clips.others_complete for one clip: 1 / 0 (NULL only via clear_classification()).
+#' clips.others_complete for one clip: TRUE -> 1, FALSE -> 0, NA -> NULL (the COMPLETE
+#' row's lit button pressed again; clear_classification() also sets NULL).
 set_others_complete <- function(vdb, sample_id, value) {
+  v <- if (length(value) == 1 && is.na(value)) NA_integer_ else as.integer(isTRUE(value))
   dbExecute(vdb$conn, paste("UPDATE clips SET", COL_OTHERS_COMPLETE, "= ? WHERE sample_id = ?"),
-            params = list(as.integer(isTRUE(value)), as.integer(sample_id)))
+            params = list(v, as.integer(sample_id)))
   invisible(TRUE)
+}
+
+#' clips.others_complete as stored: 1, 0 or NA (NULL).
+others_complete_value <- function(vdb, sample_id) {
+  v <- dbGetQuery(vdb$conn, paste("SELECT", COL_OTHERS_COMPLETE, "AS v FROM clips WHERE sample_id = ?"),
+                  params = list(as.integer(sample_id)))$v
+  if (length(v) == 1) as.integer(v) else NA_integer_
 }
 
 get_others_complete <- function(vdb, sample_id) {

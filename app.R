@@ -27,6 +27,7 @@ CODE_BUTTON <- c(btn_no = "N", btn_other = "O", btn_insect = "I",   # code-map
 stopifnot(setequal(CODE_BUTTON, c(NOT_TARGET, UNCERTAIN)))   # buttons for parked codes stay, greyed
 # O, I and P are parked as target labels (brief D8; O since 2026-10-20). O is now the
 # key into the other-species list (D9); it saves nothing. Mark O stays off.
+# Mark O and Mark U are not on screen (Phil 2026-10-27).
 # IP_BUTTONS_ON = TRUE brings back the I / P / Mark I / Mark P buttons and their keys
 # (the write gate, WRITE_CODES in db.R, still refuses the codes).
 IP_BUTTONS_ON <- FALSE
@@ -95,12 +96,11 @@ APP_VERSION <- local({
       sw("#ffffff", "white = no clip in this DB (no detection \u2265 \u03c4, or not recorded)"))
 }
 
-# Parked buttons stay on screen, greyed out: their keys do nothing (pressBtn skips them).
-.parked <- function(btn, code) {
-  tagAppendAttributes(btn, disabled = NA, style = "opacity:.35;",
-                      title = sprintf("%s is parked: label other species in the list (O)", code))
-}
-.ip_switch <- function(btn, code) if (IP_BUTTONS_ON) btn else .parked(btn, code)
+# I / P / Mark I / Mark P are left off the screen unless IP_BUTTONS_ON (Phil 2026-10-27);
+# their keys then do nothing (pressBtn finds no button).
+.ip_switch <- function(btn) if (IP_BUTTONS_ON) btn
+# Place a control at a fixed cell of the button grid.
+at <- function(row, col, tag) tagAppendAttributes(tag, style = sprintf("grid-row:%d; grid-column:%d;", row, col))
 
 # ---------------------------------------------------------------------------
 # UI
@@ -115,7 +115,7 @@ ui <- page_sidebar(
     tags$style(HTML("
       .spec-plot { border-style:solid; border-width:4px; padding:2px; cursor:pointer; margin:2px; position:relative; }
       .spec-plot-selected { box-shadow:0 0 0 5px black; z-index:2; }
-      .box-clip { font-size:11px; line-height:14px; color:#333; white-space:nowrap; overflow:hidden;
+      .box-clip { font-size:14px; line-height:18px; color:#333; white-space:nowrap; overflow:hidden;
                   text-overflow:ellipsis; }
       .seek-line { position:absolute; top:4px; bottom:22px; width:2px; background:#ff3b30;
                    pointer-events:none; z-index:5; }
@@ -149,12 +149,14 @@ ui <- page_sidebar(
       .sb-card > .card-header { padding:.4rem .7rem; font-weight:600; font-size:.86rem; background:#f7f7f9; }
       .sb-card > .card-body { padding:.55rem .7rem; }
       .sb-details > summary { cursor:pointer; font-weight:600; padding:.35rem 0; }
-      .controls-container { width:66%; min-width:520px; margin-top:10px; }
-      .ctl-row { display:flex; gap:8px; margin-bottom:8px; flex-wrap:wrap; align-items:center; }
-      .ctl-btn { flex:1 1 0; min-width:88px; height:80px; font-weight:bold; font-size:17px; padding:0;
+      .controls-container { width:100%; min-width:640px; margin-top:10px; display:grid; gap:8px;
+                            grid-template-columns:repeat(5, minmax(60px, 1fr)) minmax(200px, 2fr)
+                                                  minmax(0, 2fr) minmax(70px, 110px);
+                            grid-auto-rows:80px; }
+      .ctl-btn { width:100%; min-width:0; height:80px; font-weight:bold; font-size:17px; padding:0;
                  display:flex; align-items:center; justify-content:center; border-radius:4px; }
-      .ctl-notes { flex:1.6 1 0; min-width:120px; }
-      .ctl-notes .form-control { height:80px; }
+      .ctl-notes { grid-column:6; grid-row:1 / span 3; min-width:0; overflow-y:auto; }
+      .ctl-notes #notes { height:60px; }
       .temporal-scroll { overflow-x:auto; }
       #nav_buttons { display:contents; }
       .bslib-sidebar-layout { position:relative; }
@@ -244,7 +246,7 @@ ui <- page_sidebar(
         else if (e.key === 'ArrowUp')    { Shiny.setInputValue('arrow_key','up',   {priority:'event'}); e.preventDefault(); }
         else if (e.key === 'ArrowDown')  { Shiny.setInputValue('arrow_key','down', {priority:'event'}); e.preventDefault(); }
       });
-      // A shortcut presses its button, unless the button is parked (I, P, Mark O/I/P).
+      // A shortcut presses its button, if it is on screen (not I, P, Mark O/U/I/P).
       function pressBtn(id) { var b = $('#'+id); if (b.length && !b.prop('disabled')) b.click(); }
       // The clip the list belongs to (data-sid on the rendered list).
       function otherSid() { var l = $('#other_list .other-list'); return l.length ? parseInt(l.attr('data-sid')) : null; }
@@ -529,52 +531,50 @@ ui <- page_sidebar(
     div(class = "spectrogram-container", uiOutput("spectrogram_grid"))
   ),
   div(class = "clip-resizer", title = "Drag to resize the clip window"),
+  # Buttons sit in a 5 x 3 grid, each at a fixed cell (at(row, col)) so nothing shifts
+  # while the nav buttons (drawn once a DB is open) are missing; the notes / other-species
+  # panel is column 6 over all three rows; column 7 is space; Quit is column 8, bottom row,
+  # against the right edge (Phil 2026-10-27).
   div(class = "controls-container",
-    div(class = "ctl-row",
-      actionButton("btn_play", "\u25b6 Play", class = "btn-secondary ctl-btn"),
-      div(class = "ctl-notes",
-          uiOutput("box_clip"),
-          textInput("notes", NULL, placeholder = "Notes..."),
-          uiOutput("other_list"),
-          div(style = "display:flex; gap:4px; align-items:center;",
-              textInput("other_add", NULL, placeholder = "Add (e.g. BTNW)"),
-              uiOutput("other_add_flag", inline = TRUE))),
-      uiOutput("nav_buttons"),
-      actionButton("btn_clear", "Clear", class = "ctl-btn",
-                   style = "background-color:#f44336;border-color:#f44336;color:#fff;", title = "Clear (x)"),
-      actionButton("export_consolidated", "Export", class = "btn-primary ctl-btn"),
-      actionButton("btn_quit", "Quit", class = "btn-dark ctl-btn")
-    ),
-    div(class = "ctl-row",
-      actionButton("btn_yes", "Yes", class = "ctl-btn",
-                   style = "background-color:#1b5e20;border-color:#1b5e20;color:#fff;font-size:15px;", title = "Yes (unspecified)"),
-      actionButton("btn_yes_song", "Song", class = "ctl-btn",
-                   style = "background-color:#4caf50;border-color:#4caf50;color:#fff;font-size:15px;", title = "Yes + Song"),
-      actionButton("btn_yes_call", "Call", class = "ctl-btn",
-                   style = "background-color:#aed581;border-color:#aed581;color:#000;font-size:15px;", title = "Yes + Call"),
-      actionButton("btn_no", "N", class = "btn-danger ctl-btn", style = "font-size:18px;"),
-      actionButton("btn_unsure", "U", class = "btn-warning ctl-btn", style = "font-size:18px;"),
-      actionButton("btn_other", "O", class = "btn-info ctl-btn", style = "font-size:18px;",
-                   title = "Other species list (O)"),
-      .ip_switch(actionButton("btn_insect", "I", class = "ctl-btn",
-                   style = "background-color:#2196f3;border-color:#2196f3;color:#fff;font-size:18px;", title = "Insect"), CODE_BUTTON[["btn_insect"]]),
-      .ip_switch(actionButton("btn_peeper", "P", class = "ctl-btn",
-                   style = "background-color:#9c27b0;border-color:#9c27b0;color:#fff;font-size:18px;", title = "Peeper"), CODE_BUTTON[["btn_peeper"]])
-    ),
-    div(class = "ctl-row",
-      actionButton("btn_mark_y", "Mark Y", class = "btn-success ctl-btn", title = "Mark remaining as Yes (Alt+Y)"),
-      actionButton("btn_mark_s", "Mark S", class = "ctl-btn",
-                   style = "background-color:#4caf50;border-color:#4caf50;color:#fff;", title = "Mark remaining as Song (Alt+S)"),
-      actionButton("btn_mark_c", "Mark C", class = "ctl-btn",
-                   style = "background-color:#aed581;border-color:#aed581;color:#000;", title = "Mark remaining as Call (Alt+C)"),
-      actionButton("btn_mark_n", "Mark N", class = "btn-danger ctl-btn", title = "Mark remaining as No (Alt+N)"),
-      actionButton("btn_mark_u", "Mark U", class = "btn-warning ctl-btn", title = "Mark remaining as Unsure (Alt+U)"),
-      .parked(actionButton("btn_mark_o", "Mark O", class = "btn-info ctl-btn", title = "Mark remaining as Other (Alt+O)"), CODE_BUTTON[["btn_other"]]),
-      .ip_switch(actionButton("btn_mark_i", "Mark I", class = "ctl-btn",
-                   style = "background-color:#2196f3;border-color:#2196f3;color:#fff;", title = "Mark remaining as Insect (Alt+I)"), CODE_BUTTON[["btn_insect"]]),
-      .ip_switch(actionButton("btn_mark_p", "Mark P", class = "ctl-btn",
-                   style = "background-color:#9c27b0;border-color:#9c27b0;color:#fff;", title = "Mark remaining as Peeper (Alt+P)"), CODE_BUTTON[["btn_peeper"]])
-    )
+    at(1, 1, actionButton("btn_play", "\u25b6 Play", class = "btn-secondary ctl-btn")),
+    uiOutput("nav_buttons"),                                     # row 1, columns 2-3
+    at(1, 4, actionButton("btn_clear", "Clear", class = "ctl-btn",
+                 style = "background-color:#f44336;border-color:#f44336;color:#fff;", title = "Clear (x)")),
+    at(1, 5, actionButton("export_consolidated", "Export", class = "btn-primary ctl-btn")),
+    at(2, 1, actionButton("btn_yes", "Yes", class = "ctl-btn",
+                 style = "background-color:#1b5e20;border-color:#1b5e20;color:#fff;font-size:15px;", title = "Yes (unspecified)")),
+    at(2, 2, actionButton("btn_yes_song", "Song", class = "ctl-btn",
+                 style = "background-color:#4caf50;border-color:#4caf50;color:#fff;font-size:15px;", title = "Yes + Song")),
+    at(2, 3, actionButton("btn_yes_call", "Call", class = "ctl-btn",
+                 style = "background-color:#aed581;border-color:#aed581;color:#000;font-size:15px;", title = "Yes + Call")),
+    at(2, 4, actionButton("btn_no", "N", class = "btn-danger ctl-btn", style = "font-size:18px;")),
+    at(2, 5, actionButton("btn_other", "O", class = "btn-info ctl-btn", style = "font-size:18px;",
+                 title = "Other species list (O)")),
+    at(3, 5, actionButton("btn_unsure", "U", class = "btn-warning ctl-btn", style = "font-size:18px;")),
+    at(3, 1, actionButton("btn_mark_y", "Mark Y", class = "btn-success ctl-btn", title = "Mark remaining as Yes (Alt+Y)")),
+    at(3, 2, actionButton("btn_mark_s", "Mark S", class = "ctl-btn",
+                 style = "background-color:#4caf50;border-color:#4caf50;color:#fff;", title = "Mark remaining as Song (Alt+S)")),
+    at(3, 3, actionButton("btn_mark_c", "Mark C", class = "ctl-btn",
+                 style = "background-color:#aed581;border-color:#aed581;color:#000;", title = "Mark remaining as Call (Alt+C)")),
+    at(3, 4, actionButton("btn_mark_n", "Mark N", class = "btn-danger ctl-btn", title = "Mark remaining as No (Alt+N)")),
+    at(3, 8, actionButton("btn_quit", "Quit", class = "btn-dark ctl-btn")),
+    # IP_BUTTONS_ON only: these fill the free cells of column 7 and below
+    .ip_switch(actionButton("btn_insect", "I", class = "ctl-btn",
+                 style = "background-color:#2196f3;border-color:#2196f3;color:#fff;font-size:18px;", title = "Insect")),
+    .ip_switch(actionButton("btn_peeper", "P", class = "ctl-btn",
+                 style = "background-color:#9c27b0;border-color:#9c27b0;color:#fff;font-size:18px;", title = "Peeper")),
+    .ip_switch(actionButton("btn_mark_i", "Mark I", class = "ctl-btn",
+                 style = "background-color:#2196f3;border-color:#2196f3;color:#fff;", title = "Mark remaining as Insect (Alt+I)")),
+    .ip_switch(actionButton("btn_mark_p", "Mark P", class = "ctl-btn",
+                 style = "background-color:#9c27b0;border-color:#9c27b0;color:#fff;", title = "Mark remaining as Peeper (Alt+P)")),
+    div(class = "ctl-notes",
+        uiOutput("box_clip"),
+        textInput("notes", NULL, placeholder = "Notes..."),
+        uiOutput("other_list"),
+        div(style = "display:flex; gap:4px; align-items:center;",
+            textInput("other_add", NULL, placeholder = "Add (e.g. BTNW)"),
+            uiOutput("other_add_flag", inline = TRUE)),
+        uiOutput("other_complete"))
   )
 )
 
@@ -805,6 +805,13 @@ server <- function(input, output, session) {
     } else .panel_note(paste("Path not found:", p))
   }
   observeEvent(input$btn_go, .go(input$db_path))
+  # A folder pasted or typed into the box is scanned once typing pauses, as if Open / Scan
+  # were pressed. A .db path still waits for Open / Scan (or Enter): opening is a choice.
+  db_path_typed <- debounce(reactive(input$db_path), 600)
+  observeEvent(db_path_typed(), {
+    p <- trimws(db_path_typed() %||% "")
+    if (nzchar(p) && dir.exists(p) && !identical(normalizePath(p), rv$browse_dir)) .go(p)
+  }, ignoreInit = TRUE)
   observeEvent(input$db_path_enter, .go(input$db_path_enter$path))
 
   # The folder list and the box stay in step: every folder change (into a folder,
@@ -972,12 +979,12 @@ server <- function(input, output, session) {
     req(rv$data_loaded)
     if (isTRUE(rv$view_mode == "group")) {
       tagList(
-        actionButton("btn_prev_group2", "\u25c4", class = "btn-warning ctl-btn", title = "Previous group"),
-        actionButton("btn_next_group2", "\u25ba", class = "btn-warning ctl-btn", title = "Next group"))
+        at(1, 2, actionButton("btn_prev_group2", "\u25c4", class = "btn-warning ctl-btn", title = "Previous group")),
+        at(1, 3, actionButton("btn_next_group2", "\u25ba", class = "btn-warning ctl-btn", title = "Next group")))
     } else {
       tagList(
-        actionButton("btn_prev_page2", "\u25c4", class = "btn-warning ctl-btn", title = "Previous page"),
-        actionButton("btn_next_page2", "\u25ba", class = "btn-warning ctl-btn", title = "Next page"))
+        at(1, 2, actionButton("btn_prev_page2", "\u25c4", class = "btn-warning ctl-btn", title = "Previous page")),
+        at(1, 3, actionButton("btn_next_page2", "\u25ba", class = "btn-warning ctl-btn", title = "Next page")))
     }
   })
 
@@ -1132,11 +1139,22 @@ server <- function(input, output, session) {
         div(class = "other-head", "Other species", if (!is.na(fn)) paste0(" \u2014 ", tools::file_path_sans_ext(fn)),
             span(class = "other-hint", " \u00b7 keys label this list, Esc leaves")),
         if (nrow(ol)) lapply(seq_len(nrow(ol)), function(i) .other_row(ol[i, ], unk))
-        else div(class = "other-none", "no HawkEars candidates: O, then type in Add"),
-        tags$label(style = "font-size:12px; margin:2px 0 0 3px;", title = "every species heard on this clip is labelled or added",
-          tags$input(type = "checkbox", checked = if (get_others_complete(rv$vdb, sid)) NA else NULL,
-                     onchange = "Shiny.setInputValue('other_complete_set',{v:this.checked,sid:otherSid(),n:Math.random()},{priority:'event'})"),
-          " complete"))
+        else div(class = "other-none", "no HawkEars candidates: O, then type in Add"))
+  })
+  # COMPLETE, under the Add box, looks like a list row: Y = every species heard on this
+  # clip is labelled or added (1), N = not (0); the lit button again blanks it (NULL).
+  # No U (Phil 2026-10-27): the column holds only 1 / 0 / NULL.
+  output$other_complete <- renderUI({
+    rv$other_rev
+    req(rv$vdb, rv$box_sid)
+    v <- others_complete_value(rv$vdb, rv$box_sid)
+    lit <- if (is.na(v)) "" else if (v == 1L) "Y" else "N"
+    btn <- function(l) tags$button(type = "button", tabindex = "-1", l,
+      class = paste("other-btn", if (identical(lit, l)) paste0("on-", l)),
+      onmousedown = "event.preventDefault();",
+      onclick = sprintf("Shiny.setInputValue('other_complete_set',{v:'%s',sid:%d,n:Math.random()},{priority:'event'})", l, rv$box_sid))
+    div(class = "other-row other-complete", title = "Y: every species heard on this clip is labelled or added",
+        span(class = "other-code", "COMPLETE"), btn("Y"), btn("N"))
   })
   .other_sid <- function(ev) { s <- suppressWarnings(as.integer(ev$sid)); if (length(s) == 1 && !is.na(s)) s else rv$box_sid }
   observeEvent(input$other_set, {
@@ -1160,7 +1178,9 @@ server <- function(input, output, session) {
   })
   observeEvent(input$other_complete_set, {
     req(rv$vdb); ev <- input$other_complete_set; sid <- .other_sid(ev); req(sid)
-    set_others_complete(rv$vdb, sid, isTRUE(ev$v))
+    want <- if (identical(ev$v, "Y")) 1L else if (identical(ev$v, "N")) 0L else return()
+    cur <- others_complete_value(rv$vdb, sid)
+    set_others_complete(rv$vdb, sid, if (identical(cur, want)) NA else want == 1L)   # lit again -> blank
     rv$other_rev <- rv$other_rev + 1L
   })
   # Live flag for codes typed in the Add box that are not HawkEars codes (saved anyway).
@@ -1278,9 +1298,9 @@ server <- function(input, output, session) {
   observeEvent(input$btn_mark_y, .mark_all(DETECTION))
   observeEvent(input$btn_mark_s, .mark_all(DETECTION, VOC_SONG))
   observeEvent(input$btn_mark_c, .mark_all(DETECTION, VOC_CALL))
-  for (k in c(NOT_TARGET, UNCERTAIN)) local({          # btn_mark_n / _o / _i / _p / _u
+  for (k in NOT_TARGET) local({                        # btn_mark_n / _i / _p (no Mark U, Mark O)
     code <- k
-    if (code %in% PARKED_CODES && (code == CODE_BUTTON[["btn_other"]] || !IP_BUTTONS_ON)) return()   # Mark O/I/P parked
+    if (code %in% PARKED_CODES && (code == CODE_BUTTON[["btn_other"]] || !IP_BUTTONS_ON)) return()   # Mark O/I/P off
     observeEvent(input[[paste0("btn_mark_", tolower(code))]], .mark_all(code))
   })
 
