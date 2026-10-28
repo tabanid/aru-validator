@@ -9,7 +9,8 @@
 # there), downloads the app files and checks each one, installs any missing R
 # packages, puts an "ARU Validator" shortcut on the Desktop (Windows), and starts
 # the app. Run the same line again to update; your databases, clips and settings
-# are never touched.
+# are never touched. The practice DBs in example/ are downloaded once; an update
+# keeps the copies you have (and any labels in them).
 #
 # For testing: ARU_VALIDATOR_BASE (download from here instead, e.g. file:///...),
 # ARU_VALIDATOR_DIR (install here, no questions), ARU_VALIDATOR_NO_LAUNCH=1.
@@ -53,8 +54,10 @@ local({
   man <- read.table(lst, col.names = c("md5", "file"), stringsAsFactors = FALSE)
   for (i in seq_len(nrow(man))) {
     f <- man$file[i]; tmp <- tempfile()
+    if (startsWith(f, "example/") && file.exists(file.path(dest, f))) next
     utils::download.file(paste0(base, f), tmp, mode = "wb", quiet = TRUE)
     if (unname(tools::md5sum(tmp)) != man$md5[i]) stop("Download of ", f, " was damaged; please run the line again.")
+    dir.create(dirname(file.path(dest, f)), recursive = TRUE, showWarnings = FALSE)
     if (!file.copy(tmp, file.path(dest, f), overwrite = TRUE)) stop("Could not write ", file.path(dest, f))
   }
   version <- trimws(readLines(file.path(dest, "APP_VERSION.txt"), n = 1L, warn = FALSE))

@@ -17,6 +17,14 @@ It asks where to put the app (first time only), downloads it, installs any missi
 R packages, adds an **ARU Validator** shortcut to the Desktop (Windows), and starts
 it. Run the same line again to update.
 
+## Practice databases
+
+The `example/` folder holds three small databases to practise on: 30 nocturnal
+flight calls each of Canada Warbler (`CAWA-example.db`), White-throated Sparrow
+(`WTSP-example.db`) and "zeep" calls (`ZEEP-example.db`), 3 s clips with the call
+in the middle, unlabelled. Open one from the app. Locations are given only as a
+region (e.g. S NB, N NS). An update keeps your copies and any labels in them.
+
 ## Documents
 
 - [QUICK_START.pdf](QUICK_START.pdf): install and first use, one page
