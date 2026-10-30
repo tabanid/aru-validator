@@ -152,14 +152,30 @@ ui <- page_sidebar(
       .sb-card > .card-header { padding:.4rem .7rem; font-weight:600; font-size:.86rem; background:#f7f7f9; }
       .sb-card > .card-body { padding:.55rem .7rem; }
       .sb-details > summary { cursor:pointer; font-weight:600; padding:.35rem 0; }
-      /* buttons grow with the window (Phil 2026-10-30): row height and text follow the width */
-      .controls-container { width:100%; min-width:640px; margin-top:10px; display:grid; gap:8px;
-                            grid-template-columns:repeat(5, minmax(60px, 1fr)) minmax(200px, 2fr)
-                                                  minmax(0, 2fr) minmax(70px, 110px);
-                            grid-auto-rows:clamp(60px, 6vw, 130px); }
-      .ctl-btn { width:100%; min-width:0; height:100%; font-weight:bold; font-size:clamp(15px, 1.4vw, 26px); padding:0;
+      /* Buttons grow with the window (Phil 2026-10-30): row height and text follow the space
+         the main panel has (cqw) and the window height (vh), whichever is tighter. The grid
+         never overflows its panel: below 760 px the notes / Other species panel moves under
+         the buttons, full width, so it is always on screen. */
+      .bslib-sidebar-layout > .main { container-type:inline-size; }
+      /* bslib gives .bslib-page-main min-width 576px: with a wide sidebar that pushed the
+         clips, buttons and Other panel out of the window (Phil 2026-10-30) */
+      .bslib-sidebar-layout > .main > * { min-width:0 !important; max-width:100%; }
+      .ctl-notes .shiny-input-container { width:100% !important; max-width:100%; min-width:0; }
+      .ctl-notes .other-quick { display:flex; flex-wrap:wrap; gap:3px; }
+      .controls-container { --row:clamp(44px, min(6vw, 9vh), 130px); --row:clamp(44px, min(7cqw, 9vh), 130px);
+                            width:100%; min-width:0; margin-top:10px; display:grid; gap:8px;
+                            grid-template-columns:repeat(5, minmax(0, 1fr)) minmax(200px, 2fr)
+                                                  minmax(0, 2fr) minmax(60px, 110px);
+                            grid-template-rows:repeat(3, var(--row)); grid-auto-rows:var(--row); }
+      .ctl-btn { width:100%; min-width:0; height:100%; font-weight:bold; padding:0; overflow:hidden;
+                 font-size:clamp(13px, min(1.4vw, 2.2vh), 26px); font-size:clamp(13px, min(1.7cqw, 2.2vh), 26px);
                  display:flex; align-items:center; justify-content:center; border-radius:4px; }
-      .ctl-btn.ctl-key { font-size:clamp(17px, 1.9vw, 34px); }
+      .ctl-btn.ctl-key { font-size:clamp(16px, min(2.2cqw, 3.2vh), 34px); }
+      @container (max-width: 760px) {
+        .controls-container { grid-template-columns:repeat(5, minmax(0, 1fr)) 0 0 minmax(52px, 80px);
+                              grid-template-rows:repeat(3, var(--row)) auto; }
+        .ctl-notes { grid-column:1 / -1 !important; grid-row:4 !important; max-height:40vh; }
+      }
       .ctl-notes { grid-column:6; grid-row:1 / span 3; min-width:0; overflow-y:auto; }
       .ctl-notes #notes { height:60px; }
       .temporal-scroll { overflow-x:auto; }
