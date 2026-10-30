@@ -86,6 +86,9 @@ OTHER_SOURCES <- c("listed", "added", "legacy")    # in clip_candidates / typed 
 HE_NONBIRD_CODES <- c("Squirrel", "Canine", "Insects", "FROG-PEEP", "FROG-WOOD", "FROG-GREN",
                       "FROG-GRTR", "FROG-BULL", "FROG-LEOP", "FROG-PICK", "TOAD-AMER",
                       "Noise", "Speech", "Rooster", "Other")
+# One-click adds under the Other list's Add box (Phil 2026-10-30): coyote, red squirrel,
+# peeper, insects. Each adds its code as Y on the clip's list, nothing else.
+OTHER_QUICK_CODES <- c("COYO", "RESQ", "PEEP", "INSE")
 
 # Pipeline-owned, written at build/convert time, read-only for the app: the list shown.
 CLIP_CANDIDATES_DDL <- "

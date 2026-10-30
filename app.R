@@ -35,8 +35,8 @@ stopifnot(all(PARKED_CODES %in% CODE_BUTTON))
 `%|na|%` <- function(a, b) if (length(a) == 0 || is.na(a)) b else a
 
 # HawkEars codes for the list's Add box: unknown codes are flagged, never blocked. The
-# non-bird classes (Squirrel, FROG-PEEP, ...) count as known (D6).
-KNOWN_SPECIES_CODES <- local({ k <- load_known_species_codes(); if (is.null(k)) NULL else c(k, HE_NONBIRD_CODES) })
+# non-bird classes (Squirrel, FROG-PEEP, ...) and the quick-add codes count as known (D6).
+KNOWN_SPECIES_CODES <- local({ k <- load_known_species_codes(); if (is.null(k)) NULL else c(k, HE_NONBIRD_CODES, OTHER_QUICK_CODES) })
 
 # ---- display-settings persistence (A5) — same file as the previous tool ------
 # ARU_VALIDATOR_SETTINGS overrides the location (tests point it at a temp file).
@@ -135,6 +135,9 @@ ui <- page_sidebar(
       .other-code { min-width:76px; font-family:monospace; }
       .other-code.unknown { background:#ffb300; padding:0 3px; border-radius:3px; }
       .other-btn { width:26px; height:22px; padding:0; font-size:12px; border:1px solid #bbb; background:#fff; border-radius:3px; }
+      .other-quick { display:flex; gap:4px; margin-top:3px; }
+      .other-quick button { height:22px; padding:0 6px; font-size:11px; font-family:monospace; border:1px solid #bbb; background:#fff; border-radius:3px; }
+      .other-quick button:hover { background:#eef6ff; border-color:#0d6efd; }
       .other-btn.on-Y { background:#4caf50; color:#fff; border-color:#4caf50; }
       .other-btn.on-N { background:#dc3545; color:#fff; border-color:#dc3545; }
       .other-btn.on-U { background:#ff9800; color:#fff; border-color:#ff9800; }
@@ -569,11 +572,19 @@ ui <- page_sidebar(
                  style = "background-color:#9c27b0;border-color:#9c27b0;color:#fff;", title = "Mark remaining as Peeper (Alt+P)")),
     div(class = "ctl-notes",
         uiOutput("box_clip"),
-        textInput("notes", NULL, placeholder = "Notes..."),
+        # no browser form history on the free-text boxes (it filled old code combos, JW)
+        htmltools::tagQuery(textInput("notes", NULL, placeholder = "Notes..."))$
+          find("input")$addAttrs(autocomplete = "off")$allTags(),
         uiOutput("other_list"),
         div(style = "display:flex; gap:4px; align-items:center;",
-            textInput("other_add", NULL, placeholder = "Add (e.g. BTNW)"),
+            htmltools::tagQuery(textInput("other_add", NULL, placeholder = "Add (e.g. BTNW)"))$
+              find("input")$addAttrs(autocomplete = "off", spellcheck = "false")$allTags(),
             uiOutput("other_add_flag", inline = TRUE)),
+        # one click adds the code as Y through the Add path; focus stays where it was
+        div(class = "other-quick", lapply(OTHER_QUICK_CODES, function(k)
+          tags$button(type = "button", tabindex = "-1", k, title = paste("Add", k, "as Y"),
+            onmousedown = "event.preventDefault();",
+            onclick = sprintf("Shiny.setInputValue('other_add_go',{txt:'%s',sid:otherSid(),n:Math.random()},{priority:'event'})", k)))),
         uiOutput("other_complete"))
   )
 )
