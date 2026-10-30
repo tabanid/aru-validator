@@ -97,8 +97,8 @@ temporal_tiles <- function(groups, unit_order = NULL, active = NULL) {
   units <- if (!is.null(unit_order)) unit_order else sort(unique(d$unit))
   d$unit   <- factor(d$unit, levels = units)
   d$period <- factor(d$period, levels = sort(unique(d$period)))
-  d$status <- factor(d$status, levels = c("unexamined", "examined", "yes", "borrowed"))
-  cols <- c(unexamined = "#cccccc", examined = "#dc3545", yes = "#28a745",
+  d$status <- factor(d$status, levels = c("unexamined", "examined", "unsure", "yes", "borrowed"))
+  cols <- c(unexamined = "#cccccc", examined = "#dc3545", unsure = "#ffc107", yes = "#28a745",
             borrowed = "#17a2b8")   # present, heard in another species' clip (other=)
 
   n_periods <- nlevels(d$period)
@@ -115,7 +115,7 @@ temporal_tiles <- function(groups, unit_order = NULL, active = NULL) {
   }
   p +
     scale_x_discrete(labels = unit_short_labels(units), drop = FALSE) +
-    scale_y_discrete(limits = rev, breaks = brk) +
+    scale_y_discrete(breaks = brk) +                     # first week at the bottom (Phil 2026-10-30)
     scale_fill_manual(values = cols, guide = "none", drop = FALSE) +
     theme_minimal() +
     theme(axis.text.x = element_text(size = 7, angle = 90, vjust = 0.5, hjust = 1),

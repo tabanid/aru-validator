@@ -454,13 +454,16 @@ derive_groups <- function(vdb) {
            COUNT(*)                                            AS n_total,
            SUM(CASE WHEN classified = 1 THEN 1 ELSE 0 END)     AS n_examined,
            SUM(CASE WHEN %s THEN 1 ELSE 0 END)                AS n_yes,
+           SUM(CASE WHEN classification = '%s' THEN 1 ELSE 0 END) AS n_unsure,
            MAX(score)                                          AS max_score,
            %s
       FROM clips
-     GROUP BY unit, time_period", SQL_IS_DETECTION, lon_sel)
+     GROUP BY unit, time_period", SQL_IS_DETECTION, UNCERTAIN, lon_sel)
   g <- dbGetQuery(vdb$conn, q)
+  # chart colours (plot.R): yes green, unsure yellow (no Y, >= 1 U), examined red, else grey
   g$status <- ifelse(g$n_yes > 0, "yes",
-              ifelse(g$n_examined > 0, "examined", "unexamined"))
+              ifelse(g$n_unsure > 0, "unsure",
+              ifelse(g$n_examined > 0, "examined", "unexamined")))
   g
 }
 
@@ -538,13 +541,21 @@ build_other_index <- function(root, species) {
 #'   rows = idx + period + in_grid, n_out = rows out of grid, split into n_nocell (a week the
 #'   DB holds, at a unit with no clip that week) and n_offweek (no date, or a week the DB
 #'   doesn't hold at all))
-borrowed_cells <- function(idx, grain, groups, anchor = NULL) {
+#' sweep = TRUE (validation_meta.design site_sweep): the question is the unit, so a dated
+#' Y in any week resolves that unit's group, as R6's presence list counts it (donor clips
+#' come from the same season's DBs, so their dates are in the survey window).
+borrowed_cells <- function(idx, grain, groups, anchor = NULL, sweep = FALSE) {
   empty <- data.frame(unit = character(0), time_period = character(0),
                       n_borrowed = integer(0), provenance = character(0), stringsAsFactors = FALSE)
   if (is.null(idx) || !nrow(idx)) return(list(cells = empty, rows = idx, n_out = 0L, n_nocell = 0L, n_offweek = 0L))
   d <- as.Date(idx$date, format = "%Y-%m-%d")
   idx$period <- NA_character_
   if (any(!is.na(d))) idx$period[!is.na(d)] <- period_key(d[!is.na(d)], grain, anchor)
+  if (sweep) {
+    m <- match(idx$unit, groups$unit)
+    mv <- !is.na(idx$period) & !is.na(m)
+    idx$period[mv] <- groups$time_period[m[mv]]
+  }
   gk <- paste(groups$unit, groups$time_period, sep = "\r")
   idx$in_grid <- !is.na(idx$period) & paste(idx$unit, idx$period, sep = "\r") %in% gk
   ig <- idx[idx$in_grid, , drop = FALSE]
@@ -568,8 +579,9 @@ borrowed_cells <- function(idx, grain, groups, anchor = NULL) {
 #' Wording for borrowed detections outside the grid. A one-round standard DB drawn with
 #' nothing left out (validation_meta.frame_fingerprint set, Phil 2026-10-30) holds a clip for
 #' every unit-week HawkEars scored the species >= the floor, so an Other Y at a unit-week with
-#' no clip is a HawkEars miss and is named as one. A sweep holds one week per unit. Older DBs
-#' (cells left out) keep "outside the grid".
+#' no clip is a HawkEars miss and is named as one. A sweep holds every unit with a detection
+#' (borrowed_cells(sweep = TRUE) places a Y in any week on its unit), so a Y at a unit with no
+#' clip is a miss too. Older DBs (cells left out) keep "outside the grid".
 borrowed_out_text <- function(b, meta = NULL) {
   mv <- function(k) if (!is.null(meta) && k %in% names(meta) && !is.na(meta[[k]][1])) as.character(meta[[k]][1]) else NA_character_
   full <- !is.na(mv("frame_fingerprint")) && nzchar(mv("frame_fingerprint"))
@@ -577,7 +589,7 @@ borrowed_out_text <- function(b, meta = NULL) {
   if (full && identical(mv("design"), "standard"))
     sprintf("%d heard where HawkEars had no detection that week%s", b$n_nocell %||% 0L, off)
   else if (full && identical(mv("design"), "site_sweep"))
-    sprintf("%d in weeks this sweep does not hold%s", b$n_nocell %||% 0L, off)
+    sprintf("%d heard at recorders where HawkEars had no detection%s", b$n_nocell %||% 0L, off)
   else sprintf("%d detection(s) outside the grid", b$n_out %||% 0L)
 }
 
@@ -879,4 +891,91 @@ list_dir_entries <- function(dir) {
   ents  <- ents[keep]; isdir <- isdir[keep]
   ord   <- order(!isdir, tolower(ents))
   data.frame(name = ents[ord], is_dir = isdir[ord], stringsAsFactors = FALSE)
+}
+
+# ---- Other payoff: is labelling other species still worth it? (Phil 2026-10-30) --------
+# Each Other Y made this session is scored against the other occupancy DBs in the folder
+# the app reads (a snapshot taken when the DB was opened):
+#   saves  the species' DB has that unit-week (sweep: unit) unresolved and not worked through:
+#          the Y resolves it, so its validator skips a clip
+#   new    a detection the histories would not otherwise have: a unit-week where HawkEars had
+#          no detection (a full-grid DB, validation_meta.frame_fingerprint set), or one worked
+#          through with no Y
+#   known  already resolved there (an own Y, an earlier Other Y, or one earlier this session)
+#   no_db  no occupancy DB for that species in the folder (non-birds, species not drawn)
+# Read-only. An estimate: only DBs under the folder the app reads are seen.
+
+#' Snapshot for other_payoff(): the occupancy DBs under `root` other than the open one, their
+#' unit-week groups, and every Other Y already in any DB there.
+other_payoff_state <- function(root, open_path = NULL) {
+  files <- .scan_db_files(root)
+  if (!is.null(open_path)) files <- setdiff(files, normalizePath(open_path, mustWork = FALSE))
+  tg <- list(); gr <- list()
+  for (p in files) {
+    con <- tryCatch(dbConnect(RSQLite::SQLite(), p, flags = RSQLite::SQLITE_RO, synchronous = NULL), error = function(e) NULL)
+    if (is.null(con)) next
+    r <- tryCatch({
+      tabs <- dbListTables(con)
+      m <- if ("validation_meta" %in% tabs) dbGetQuery(con, "SELECT * FROM validation_meta LIMIT 1") else NULL
+      mv <- function(k) if (!is.null(m) && nrow(m) && k %in% names(m) && !is.na(m[[k]][1])) as.character(m[[k]][1]) else NA_character_
+      if (!identical(mv("mode"), "occupancy") || is.na(mv("species"))) NULL else {
+        g <- dbGetQuery(con, sprintf("SELECT unit, time_period, COUNT(*) AS n_total,
+                SUM(CASE WHEN classified = 1 THEN 1 ELSE 0 END) AS n_examined,
+                SUM(CASE WHEN %s THEN 1 ELSE 0 END) AS n_yes FROM clips GROUP BY unit, time_period", SQL_IS_DETECTION))
+        dflt <- function(v, d) if (is.na(v)) d else v
+        list(t = data.frame(species = mv("species"), db = p, design = dflt(mv("design"), "standard"),
+                            grain = dflt(mv("grain"), "week"), anchor = mv("anchor_date"),
+                            full = !is.na(mv("frame_fingerprint")), stringsAsFactors = FALSE),
+             g = if (nrow(g)) cbind(db = p, g, stringsAsFactors = FALSE) else NULL)
+      }
+    }, error = function(e) NULL)
+    dbDisconnect(con)
+    if (!is.null(r)) { tg[[p]] <- r$t; gr[[p]] <- r$g }
+  }
+  bor <- tryCatch(harvest_other(files, quiet = TRUE), error = function(e) NULL)
+  if (!is.null(bor)) bor <- bor[bor$recipient_species != bor$source_species & !is.na(bor$date), c("recipient_species", "unit", "date")]
+  list(targets = if (length(tg)) do.call(rbind, tg) else NULL,
+       groups = if (length(gr)) do.call(rbind, gr) else NULL, borrowed = bor)
+}
+
+#' Score Other Y marks (data.frame code, unit, date, in the order made) against a
+#' other_payoff_state(). Returns the marks with `outcome` saves / new / known / no_db.
+other_payoff <- function(marks, state) {
+  if (is.null(marks) || !nrow(marks)) return(cbind(marks, outcome = character(0)))
+  tg <- state$targets; gr <- state$groups; bor <- state$borrowed
+  done <- character(0)                               # db|key resolved by an earlier mark this session
+  rank <- c(saves = 4L, new = 3L, known = 2L, no_db = 1L)
+  out <- character(nrow(marks))
+  for (i in seq_len(nrow(marks))) {
+    t <- if (is.null(tg)) NULL else tg[tg$species == marks$code[i], , drop = FALSE]
+    best <- "no_db"
+    if (!is.null(t) && nrow(t) && !is.na(marks$date[i])) for (j in seq_len(nrow(t))) {
+      sweep <- identical(t$design[j], "site_sweep")
+      per <- tryCatch(period_key(as.Date(marks$date[i]), t$grain[j], if (is.na(t$anchor[j])) NULL else t$anchor[j]),
+                      error = function(e) NA_character_)
+      g <- gr[gr$db == t$db[j], , drop = FALSE]
+      hit <- if (sweep) g[g$unit == marks$unit[i], , drop = FALSE] else g[g$unit == marks$unit[i] & g$time_period %in% per, , drop = FALSE]
+      key <- paste(t$db[j], marks$unit[i], if (sweep) "" else per)
+      b <- bor[bor$recipient_species == marks$code[i] & bor$unit == marks$unit[i], , drop = FALSE]
+      b_hit <- nrow(b) > 0 && (sweep || per %in% period_key(as.Date(b$date), t$grain[j], if (is.na(t$anchor[j])) NULL else t$anchor[j]))
+      o <- if (key %in% done || b_hit || (nrow(hit) && sum(hit$n_yes) > 0)) "known"
+           else if (!nrow(hit)) (if (t$full[j]) "new" else "known")
+           else if (sum(hit$n_examined) >= sum(hit$n_total)) "new"
+           else "saves"
+      if (o %in% c("saves", "new")) done <- c(done, key)
+      if (rank[[o]] > rank[[best]]) best <- o
+    }
+    out[i] <- best
+  }
+  marks$outcome <- out
+  marks
+}
+
+#' One line for the Other panel: this session's marks and the last `k` of them.
+other_payoff_text <- function(scored, k = 20L) {
+  if (is.null(scored) || !nrow(scored)) return("Other payoff: no Other Y yet this session")
+  use <- scored$outcome %in% c("saves", "new")
+  last <- tail(use, k)
+  sprintf("Other payoff: last %d marks, %d useful · session %d of %d (saved a clip %d, new detection %d)",
+          length(last), sum(last), sum(use), nrow(scored), sum(scored$outcome == "saves"), sum(scored$outcome == "new"))
 }

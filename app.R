@@ -90,10 +90,10 @@ APP_VERSION <- local({
     tags$span(style = sprintf("display:inline-block;width:10px;height:10px;background:%s;border:1px solid #bbb;vertical-align:middle;margin-right:3px;", col)),
     txt)
   div(class = "coverage-legend", style = "font-size:11px; color:#444; margin-top:3px;",
-      sw("#cccccc", "grey = to do"), sw("#dc3545", "red = examined, no Y"),
-      sw("#28a745", "green = Y"),
+      sw("#cccccc", "grey = to do"), sw("#dc3545", "red = N, no Y"),
+      sw("#ffc107", "yellow = U, no Y"), sw("#28a745", "green = Y"),
       sw("#17a2b8", "teal = present, heard in another species' clip (skip it)"),
-      sw("#ffffff", "white = no clip in this DB (no detection \u2265 \u03c4, or not recorded)"))
+      sw("#ffffff", "white = no clip in this DB (no HawkEars detection, or not recorded)"))
 }
 
 # I / P / Mark I / Mark P are left off the screen unless IP_BUTTONS_ON (Phil 2026-10-27);
@@ -152,12 +152,14 @@ ui <- page_sidebar(
       .sb-card > .card-header { padding:.4rem .7rem; font-weight:600; font-size:.86rem; background:#f7f7f9; }
       .sb-card > .card-body { padding:.55rem .7rem; }
       .sb-details > summary { cursor:pointer; font-weight:600; padding:.35rem 0; }
+      /* buttons grow with the window (Phil 2026-10-30): row height and text follow the width */
       .controls-container { width:100%; min-width:640px; margin-top:10px; display:grid; gap:8px;
                             grid-template-columns:repeat(5, minmax(60px, 1fr)) minmax(200px, 2fr)
                                                   minmax(0, 2fr) minmax(70px, 110px);
-                            grid-auto-rows:80px; }
-      .ctl-btn { width:100%; min-width:0; height:80px; font-weight:bold; font-size:17px; padding:0;
+                            grid-auto-rows:clamp(60px, 6vw, 130px); }
+      .ctl-btn { width:100%; min-width:0; height:100%; font-weight:bold; font-size:clamp(15px, 1.4vw, 26px); padding:0;
                  display:flex; align-items:center; justify-content:center; border-radius:4px; }
+      .ctl-btn.ctl-key { font-size:clamp(17px, 1.9vw, 34px); }
       .ctl-notes { grid-column:6; grid-row:1 / span 3; min-width:0; overflow-y:auto; }
       .ctl-notes #notes { height:60px; }
       .temporal-scroll { overflow-x:auto; }
@@ -545,15 +547,15 @@ ui <- page_sidebar(
                  style = "background-color:#f44336;border-color:#f44336;color:#fff;", title = "Clear (x)")),
     at(1, 5, actionButton("export_consolidated", "Export", class = "btn-primary ctl-btn")),
     at(2, 1, actionButton("btn_yes", "Yes", class = "ctl-btn",
-                 style = "background-color:#1b5e20;border-color:#1b5e20;color:#fff;font-size:15px;", title = "Yes (unspecified)")),
+                 style = "background-color:#1b5e20;border-color:#1b5e20;color:#fff;", title = "Yes (unspecified)")),
     at(2, 2, actionButton("btn_yes_song", "Song", class = "ctl-btn",
-                 style = "background-color:#4caf50;border-color:#4caf50;color:#fff;font-size:15px;", title = "Yes + Song")),
+                 style = "background-color:#4caf50;border-color:#4caf50;color:#fff;", title = "Yes + Song")),
     at(2, 3, actionButton("btn_yes_call", "Call", class = "ctl-btn",
-                 style = "background-color:#aed581;border-color:#aed581;color:#000;font-size:15px;", title = "Yes + Call")),
-    at(2, 4, actionButton("btn_no", "N", class = "btn-danger ctl-btn", style = "font-size:18px;")),
-    at(2, 5, actionButton("btn_other", "O", class = "btn-info ctl-btn", style = "font-size:18px;",
+                 style = "background-color:#aed581;border-color:#aed581;color:#000;", title = "Yes + Call")),
+    at(2, 4, actionButton("btn_no", "N", class = "btn-danger ctl-btn ctl-key")),
+    at(2, 5, actionButton("btn_other", "O", class = "btn-info ctl-btn ctl-key",
                  title = "Other species list (O)")),
-    at(3, 5, actionButton("btn_unsure", "U", class = "btn-warning ctl-btn", style = "font-size:18px;")),
+    at(3, 5, actionButton("btn_unsure", "U", class = "btn-warning ctl-btn ctl-key")),
     at(3, 1, actionButton("btn_mark_y", "Mark Y", class = "btn-success ctl-btn", title = "Mark remaining as Yes (Alt+Y)")),
     at(3, 2, actionButton("btn_mark_s", "Mark S", class = "ctl-btn",
                  style = "background-color:#4caf50;border-color:#4caf50;color:#fff;", title = "Mark remaining as Song (Alt+S)")),
@@ -585,7 +587,8 @@ ui <- page_sidebar(
           tags$button(type = "button", tabindex = "-1", k, title = paste("Add", k, "as Y"),
             onmousedown = "event.preventDefault();",
             onclick = sprintf("Shiny.setInputValue('other_add_go',{txt:'%s',sid:otherSid(),n:Math.random()},{priority:'event'})", k)))),
-        uiOutput("other_complete"))
+        uiOutput("other_complete"),
+        uiOutput("other_payoff"))
   )
 )
 
@@ -735,6 +738,12 @@ server <- function(input, output, session) {
     rv$view_unit <- rv$units[1] %|na|% NULL
 
     rv$borrowed <- NULL
+    # Other payoff (Phil 2026-10-30): snapshot of the other DBs in the folder, scored against
+    # this session's Other Y marks (other_payoff())
+    rv$open_at <- .iso_now()
+    rv$payoff_state <- tryCatch(other_payoff_state(other_index_root(
+      if (!is.null(rv$scan_root) && !is.null(rv$scanned) && vdb$path %in% rv$scanned$db_path) rv$scan_root else vdb$path),
+      vdb$path), error = function(e) NULL)
     if (rv$mode == "occupancy") {
       g <- derive_groups(vdb); ord <- .unit_order_by_lon(g); rv$unit_order <- ord
       g <- g[order(match(g$unit, ord), g$time_period), , drop = FALSE]; rownames(g) <- NULL
@@ -782,7 +791,8 @@ server <- function(input, output, session) {
     }
     idx <- tryCatch(build_other_index(root, vdb$spcd), error = function(e) NULL)
     if (is.null(idx)) return(list(off = FALSE, cells = NULL, n_out = 0L, n_nocell = 0L, n_offweek = 0L, n_rows = 0L, n_dbs = 0L, root = root))
-    b <- borrowed_cells(idx, rv$grain, groups, rv$anchor)
+    dsg <- rv$mode_info$meta$design
+    b <- borrowed_cells(idx, rv$grain, groups, rv$anchor, sweep = identical(as.character(dsg)[1], "site_sweep"))
     list(off = FALSE, cells = b$cells, n_out = b$n_out, n_nocell = b$n_nocell, n_offweek = b$n_offweek, n_rows = nrow(idx),
          n_dbs = sum(attr(idx, "scan")$status != "skipped"), root = root)
   }
@@ -1166,6 +1176,20 @@ server <- function(input, output, session) {
       onclick = sprintf("Shiny.setInputValue('other_complete_set',{v:'%s',sid:%d,n:Math.random()},{priority:'event'})", l, rv$box_sid))
     div(class = "other-row other-complete", title = "Y: every species heard on this clip is labelled or added",
         span(class = "other-code", "COMPLETE"), btn("Y"), btn("N"))         # code-map: COMPLETE buttons
+  })
+  output$other_payoff <- renderUI({
+    rv$other_rev
+    req(rv$vdb, rv$payoff_state, rv$open_at)
+    mk <- tryCatch(dbGetQuery(rv$vdb$conn, "SELECT o.code, c.unit, c.date FROM clip_others o JOIN clips c ON c.sample_id = o.sample_id
+                                            WHERE o.label = ? AND o.classified_at >= ? ORDER BY o.classified_at, o.rowid",
+                              params = list(DETECTION, rv$open_at)), error = function(e) NULL)
+    sc <- other_payoff(mk, rv$payoff_state)
+    low <- !is.null(sc) && nrow(sc) >= 10 && sum(tail(sc$outcome, 20) %in% c("saves", "new")) == 0
+    div(class = "other-payoff", style = sprintf("font-size:11px; margin-top:4px; color:#333;%s",
+                                                 if (low) " background:#fff3cd; padding:1px 4px;" else ""),
+        title = paste("useful = it saves a clip in another species' DB in this folder, or is a detection the",
+                      "histories would not otherwise have. Known = already resolved there; no DB = not validated here."),
+        other_payoff_text(sc), if (low) " — mostly already known: Other is adding little now")
   })
   .other_sid <- function(ev) { s <- suppressWarnings(as.integer(ev$sid)); if (length(s) == 1 && !is.na(s)) s else rv$box_sid }
   observeEvent(input$other_set, {
