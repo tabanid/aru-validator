@@ -778,12 +778,12 @@ server <- function(input, output, session) {
                      rv$grain, if (is.na(chk$n_mismatch)) chk$example
                                else sprintf("%d of %d clips, e.g. %s", chk$n_mismatch, chk$n_checked, chk$example))
       rv$warn_message <- paste(c(rv$warn_message, msg), collapse = " ")
-      return(list(off = TRUE, cells = NULL, n_out = 0L, n_rows = 0L, n_dbs = 0L, root = root))
+      return(list(off = TRUE, cells = NULL, n_out = 0L, n_nocell = 0L, n_offweek = 0L, n_rows = 0L, n_dbs = 0L, root = root))
     }
     idx <- tryCatch(build_other_index(root, vdb$spcd), error = function(e) NULL)
-    if (is.null(idx)) return(list(off = FALSE, cells = NULL, n_out = 0L, n_rows = 0L, n_dbs = 0L, root = root))
+    if (is.null(idx)) return(list(off = FALSE, cells = NULL, n_out = 0L, n_nocell = 0L, n_offweek = 0L, n_rows = 0L, n_dbs = 0L, root = root))
     b <- borrowed_cells(idx, rv$grain, groups, rv$anchor)
-    list(off = FALSE, cells = b$cells, n_out = b$n_out, n_rows = nrow(idx),
+    list(off = FALSE, cells = b$cells, n_out = b$n_out, n_nocell = b$n_nocell, n_offweek = b$n_offweek, n_rows = nrow(idx),
          n_dbs = sum(attr(idx, "scan")$status != "skipped"), root = root)
   }
 
@@ -1490,8 +1490,8 @@ server <- function(input, output, session) {
     bor <- rv$borrowed
     bor_line <- if (rv$mode == "occupancy" && !is.null(bor)) {
       txt <- if (isTRUE(bor$off)) "off (see the warning above)" else
-        sprintf("%d cell(s) resolved; %d detection(s) outside the grid; %d DB(s) read",
-                if (is.null(bor$cells)) 0L else nrow(bor$cells), bor$n_out, bor$n_dbs)
+        sprintf("%d cell(s) resolved; %s; %d DB(s) read",
+                if (is.null(bor$cells)) 0L else nrow(bor$cells), borrowed_out_text(bor, rv$mode_info$meta), bor$n_dbs)
       sprintf("<tr><td style='font-weight:bold;'>Other species:</td><td>%s</td></tr>", txt)
     } else ""
     grp_line <- if (rv$mode == "occupancy" && !is.null(rv$groups)) {

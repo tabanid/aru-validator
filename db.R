@@ -535,11 +535,13 @@ build_other_index <- function(root, species) {
 #' in grid only where the recipient has its own clips (`groups`); the rest (no
 #' clip there, no date, outside the season) is counted as out of grid.
 #' @return list(cells = data.frame(unit, time_period, n_borrowed, provenance),
-#'   rows = idx + period + in_grid, n_out = rows out of grid)
+#'   rows = idx + period + in_grid, n_out = rows out of grid, split into n_nocell (a week the
+#'   DB holds, at a unit with no clip that week) and n_offweek (no date, or a week the DB
+#'   doesn't hold at all))
 borrowed_cells <- function(idx, grain, groups, anchor = NULL) {
   empty <- data.frame(unit = character(0), time_period = character(0),
                       n_borrowed = integer(0), provenance = character(0), stringsAsFactors = FALSE)
-  if (is.null(idx) || !nrow(idx)) return(list(cells = empty, rows = idx, n_out = 0L))
+  if (is.null(idx) || !nrow(idx)) return(list(cells = empty, rows = idx, n_out = 0L, n_nocell = 0L, n_offweek = 0L))
   d <- as.Date(idx$date, format = "%Y-%m-%d")
   idx$period <- NA_character_
   if (any(!is.na(d))) idx$period[!is.na(d)] <- period_key(d[!is.na(d)], grain, anchor)
@@ -558,7 +560,25 @@ borrowed_cells <- function(idx, grain, groups, anchor = NULL) {
       provenance = paste(unique(ig$who[k]), collapse = "; "), stringsAsFactors = FALSE)))
     rownames(cells) <- NULL
   }
-  list(cells = cells, rows = idx, n_out = sum(!idx$in_grid))
+  wk <- !is.na(idx$period) & idx$period %in% groups$time_period
+  list(cells = cells, rows = idx, n_out = sum(!idx$in_grid),
+       n_nocell = sum(!idx$in_grid & wk), n_offweek = sum(!idx$in_grid & !wk))
+}
+
+#' Wording for borrowed detections outside the grid. A one-round standard DB drawn with
+#' nothing left out (validation_meta.frame_fingerprint set, Phil 2026-10-30) holds a clip for
+#' every unit-week HawkEars scored the species >= the floor, so an Other Y at a unit-week with
+#' no clip is a HawkEars miss and is named as one. A sweep holds one week per unit. Older DBs
+#' (cells left out) keep "outside the grid".
+borrowed_out_text <- function(b, meta = NULL) {
+  mv <- function(k) if (!is.null(meta) && k %in% names(meta) && !is.na(meta[[k]][1])) as.character(meta[[k]][1]) else NA_character_
+  full <- !is.na(mv("frame_fingerprint")) && nzchar(mv("frame_fingerprint"))
+  off <- if (isTRUE(b$n_offweek > 0)) sprintf("; %d outside this DB's weeks or undated", b$n_offweek) else ""
+  if (full && identical(mv("design"), "standard"))
+    sprintf("%d heard where HawkEars had no detection that week%s", b$n_nocell %||% 0L, off)
+  else if (full && identical(mv("design"), "site_sweep"))
+    sprintf("%d in weeks this sweep does not hold%s", b$n_nocell %||% 0L, off)
+  else sprintf("%d detection(s) outside the grid", b$n_out %||% 0L)
 }
 
 #' Add n_borrowed to a derive_groups() frame; a cell with no own Y and a borrowed
