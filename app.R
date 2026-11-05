@@ -47,7 +47,8 @@ load_settings <- function() {
                    grid_rows = 5, grid_cols = 4, last_dir = path.expand("~"),
                    validator = "",   # remembered validator name (contract §5.1)
                    show_p = FALSE,   # p(correct) pill: display only, hidden by default (brief F2)
-                   auto_next_page = FALSE)   # last clip answered -> next page (off: Phil 2026-10-20)
+                   auto_next_page = FALSE,   # last clip answered -> next page (off: Phil 2026-10-20)
+                   centre_lines = FALSE, centre_sec = 1)   # two lines at centre +/- x s (Phil 2026-11-05)
   if (file.exists(SETTINGS_FILE)) {
     tryCatch({
       s <- readRDS(SETTINGS_FILE)
@@ -162,15 +163,19 @@ ui <- page_sidebar(
       .bslib-sidebar-layout > .main > * { min-width:0 !important; max-width:100%; }
       .ctl-notes .shiny-input-container { width:100% !important; max-width:100%; min-width:0; }
       .ctl-notes .other-quick { display:flex; flex-wrap:wrap; gap:3px; }
-      .controls-container { --row:clamp(44px, min(6vw, 9vh), 130px); --row:clamp(44px, min(7cqw, 9vh), 130px);
+      /* --row-fit (set by the clip-resizer script): a third of the space left between the
+         top of the buttons and the bottom of the window, so dragging the clip bar or resizing
+         the window grows / shrinks the rows; capped at 84px (Phil 2026-11-04: 130 was too tall) */
+      .controls-container { --row:clamp(40px, min(6vw, 7vh), 84px);
+                            --row:clamp(40px, min(7cqw, 9vh, var(--row-fit, 9vh)), 84px);
                             width:100%; min-width:0; margin-top:10px; display:grid; gap:8px;
                             grid-template-columns:repeat(5, minmax(0, 1fr)) minmax(200px, 2fr)
                                                   minmax(0, 2fr) minmax(60px, 110px);
                             grid-template-rows:repeat(3, var(--row)); grid-auto-rows:var(--row); }
       .ctl-btn { width:100%; min-width:0; height:100%; font-weight:bold; padding:0; overflow:hidden;
-                 font-size:clamp(13px, min(1.4vw, 2.2vh), 26px); font-size:clamp(13px, min(1.7cqw, 2.2vh), 26px);
+                 font-size:clamp(13px, min(1.4vw, 2.2vh), 22px); font-size:clamp(13px, min(1.7cqw, calc(var(--row) * 0.3)), 22px);
                  display:flex; align-items:center; justify-content:center; border-radius:4px; }
-      .ctl-btn.ctl-key { font-size:clamp(16px, min(2.2cqw, 3.2vh), 34px); }
+      .ctl-btn.ctl-key { font-size:clamp(16px, min(2.2cqw, calc(var(--row) * 0.4)), 30px); }
       @container (max-width: 760px) {
         .controls-container { grid-template-columns:repeat(5, minmax(0, 1fr)) 0 0 minmax(52px, 80px);
                               grid-template-rows:repeat(3, var(--row)) auto; }
@@ -402,14 +407,21 @@ ui <- page_sidebar(
           var cont = document.querySelector('.spectrogram-container');
           if (!handle || !cont) return;
           var dragging = false;
+          // button rows share the space below the clip window (3 rows, 2 gaps of 8px, 12px margin)
+          var fit = function(){
+            var cc = document.querySelector('.controls-container'); if (!cc) return;
+            var room = window.innerHeight - (cc.getBoundingClientRect().top + window.scrollY) - 12;
+            cc.style.setProperty('--row-fit', Math.max(0, (room - 16) / 3) + 'px'); };
           handle.addEventListener('mousedown', function(e){ dragging = true;
             handle.classList.add('dragging'); document.body.style.userSelect = 'none'; e.preventDefault(); });
           document.addEventListener('mousemove', function(e){ if (!dragging) return;
             var top = cont.getBoundingClientRect().top;
             var h = Math.max(140, Math.min(window.innerHeight - 120, e.clientY - top));
-            cont.style.height = h + 'px'; });
+            cont.style.height = h + 'px'; fit(); });
           document.addEventListener('mouseup', function(){ if (!dragging) return; dragging = false;
-            handle.classList.remove('dragging'); document.body.style.userSelect = ''; });
+            handle.classList.remove('dragging'); document.body.style.userSelect = ''; fit(); });
+          window.addEventListener('resize', fit);
+          fit(); setInterval(fit, 1000);   // the controls render after the data loads
         }, 400);
       });
     ")),
@@ -484,7 +496,12 @@ ui <- page_sidebar(
             numericInput("grid_cols", "Cols", 4, min = 1, max = 8,  step = 1)),
           sliderInput("spec_height", "Clip height (px)", min = 120, max = 500,
                       value = 260, step = 20),
-          checkboxInput("show_p", "Show p(correct) (pipeline estimate)", value = FALSE)
+          checkboxInput("show_p", "Show p(correct) (pipeline estimate)", value = FALSE),
+          div(style = "display:flex; gap:6px; align-items:center;",
+            checkboxInput("centre_lines", "Lines at centre \u00b1", value = FALSE),
+            div(style = "width:80px;",
+              numericInput("centre_sec", NULL, value = 1, min = 0.1, max = 30, step = 0.1)),
+            span(style = "font-size:12px;", "s"))
         )
       ),
       card(class = "sb-card",
@@ -627,6 +644,8 @@ server <- function(input, output, session) {
     updateNumericInput(session, "grid_cols",   value    = saved_settings$grid_cols)
     updateCheckboxInput(session, "show_p",     value    = isTRUE(saved_settings$show_p))
     updateCheckboxInput(session, "auto_next_page", value = isTRUE(saved_settings$auto_next_page))
+    updateCheckboxInput(session, "centre_lines", value = isTRUE(saved_settings$centre_lines))
+    updateNumericInput(session, "centre_sec",  value    = saved_settings$centre_sec)
     if (!is.null(saved_settings$last_dir) && dir.exists(saved_settings$last_dir)) {
       rv$browse_dir <- saved_settings$last_dir
       isolate(.scan_into(saved_settings$last_dir))     # species list ready at launch
@@ -1076,6 +1095,15 @@ server <- function(input, output, session) {
           wl = sp$wl, ovlp = sp$ovlp, wn = sp$wn, flim = sp$flim,
           contrast = sp$contrast, color_scheme = sp$color_scheme)
         spec$render()
+        if (isTRUE(spec$success) && isTRUE(input$centre_lines)) {
+          x <- suppressWarnings(as.numeric(input$centre_sec))
+          if (length(x) == 1 && !is.na(x) && x > 0) {
+            u <- par("usr"); mid <- (u[1] + u[2]) / 2
+            # a colour that stands out on the scheme drawn: blue on magma, orange otherwise
+            abline(v = mid + c(-x, x), lwd = 2,
+                   col = if (identical(sp$color_scheme, "magma")) "#00BFFF" else "#FF8C00")
+          }
+        }
       })
       output[[paste0("spec_container_", idx)]] <- renderUI({
         cur_last <- rv$last_updated_clip; cur_act <- rv$active_position
@@ -1363,6 +1391,7 @@ server <- function(input, output, session) {
       contrast = input$contrast, spec_height = input$spec_height,
       grid_rows = input$grid_rows, grid_cols = input$grid_cols,
       show_p = isTRUE(input$show_p), auto_next_page = isTRUE(input$auto_next_page),
+      centre_lines = isTRUE(input$centre_lines), centre_sec = input$centre_sec,
       last_db  = if (!is.null(rv$vdb)) rv$vdb$path   else saved_settings$last_db,
       last_dir = if (!is.null(rv$vdb)) rv$vdb$db_dir else saved_settings$last_dir,
       validator = rv$validator))
