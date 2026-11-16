@@ -87,8 +87,10 @@ unit_short_labels <- function(units) {
 }
 
 #' F2 — compact unit x time_period status tiles (fixed grain). `groups` is
-#' derive_groups() output; `unit_order` orders columns west->east. `active` =
-#' list(unit, period) of the cell on screen: drawn with a black outline (brief F3).
+#' derive_groups() output; `unit_order` orders the rows west->east, top to bottom.
+#' Units run down the y axis with their full names and weeks across the top, so the
+#' names can be read; the sidebar box scrolls when there are many units (Phil 2026-11-16).
+#' `active` = list(unit, period) of the cell on screen: drawn with a black outline (brief F3).
 temporal_tiles <- function(groups, unit_order = NULL, active = NULL) {
   if (is.null(groups) || nrow(groups) == 0) return(.empty_plot("No data yet"))
   d <- data.frame(unit = as.character(groups$unit),
@@ -107,36 +109,38 @@ temporal_tiles <- function(groups, unit_order = NULL, active = NULL) {
     brk <- levels(d$period)[seq(1, n_periods,
             by = if (n_periods <= 20) 2 else if (n_periods <= 50) 5 else 10)]
 
-  p <- ggplot(d, aes(x = unit, y = period, fill = status)) +
+  p <- ggplot(d, aes(x = period, y = unit, fill = status)) +
     geom_tile(color = "#cccccc", linewidth = 0.5)
   if (!is.null(active) && !is.null(active$unit) && !is.null(active$period)) {
     a <- d[as.character(d$unit) == active$unit & as.character(d$period) == active$period, , drop = FALSE]
     if (nrow(a)) p <- p + geom_tile(data = a, fill = NA, color = "#000000", linewidth = 1.1)
   }
   p +
-    scale_x_discrete(labels = unit_short_labels(units), drop = FALSE) +
-    scale_y_discrete(breaks = brk) +                     # first week at the bottom (Phil 2026-10-30)
+    scale_x_discrete(breaks = brk, position = "top") +   # first week on the left
+    scale_y_discrete(limits = rev(units)) +              # first (westmost) unit at the top
     scale_fill_manual(values = cols, guide = "none", drop = FALSE) +
     theme_minimal() +
-    theme(axis.text.x = element_text(size = 7, angle = 90, vjust = 0.5, hjust = 1),
-          axis.title.x = element_blank(),
-          axis.ticks.x = element_blank(), axis.text.y = element_text(size = 8),
+    theme(axis.text.x = element_text(size = 11), axis.title.x = element_blank(),
+          axis.ticks = element_blank(), axis.text.y = element_text(size = 11),
           axis.title.y = element_blank(), panel.grid = element_blank(),
           plot.margin = unit(c(0.1, 0.1, 0.1, 0.1), "cm"))
 }
 
-#' The (unit, period) under a click/hover on temporal_tiles, or NULL. `x`, `y` are the
-#' plot's discrete positions as Shiny reports them; the axis order is read back from
-#' the built plot, so it always matches what is drawn.
+#' Pixel height for temporal_tiles: 16 px per unit plus the week axis.
+temporal_tiles_height <- function(n_units) max(120L, 16L * as.integer(n_units) + 34L)
+
+#' The (unit, period) under a click/hover on temporal_tiles, or NULL. `x` (week) and
+#' `y` (unit) are the plot's discrete positions as Shiny reports them; the axis order
+#' is read back from the built plot, so it always matches what is drawn.
 tile_at <- function(groups, unit_order, x, y) {
   if (is.null(groups) || nrow(groups) == 0 || is.null(x) || is.null(y)) return(NULL)
   pp <- ggplot_build(temporal_tiles(groups, unit_order))$layout$panel_params[[1]]
   xl <- pp$x$get_limits(); yl <- pp$y$get_limits()
   i <- round(x); j <- round(y)
   if (i < 1 || i > length(xl) || j < 1 || j > length(yl)) return(NULL)
-  hit <- groups[as.character(groups$unit) == xl[i] & as.character(groups$time_period) == yl[j], , drop = FALSE]
+  hit <- groups[as.character(groups$unit) == yl[j] & as.character(groups$time_period) == xl[i], , drop = FALSE]
   if (!nrow(hit)) return(NULL)                     # a white cell: no clip there
-  list(unit = xl[i], period = yl[j])
+  list(unit = yl[j], period = xl[i])
 }
 
 .empty_plot <- function(msg) {

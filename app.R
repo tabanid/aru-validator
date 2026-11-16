@@ -120,12 +120,17 @@ ui <- page_sidebar(
                   text-overflow:ellipsis; }
       .seek-line { position:absolute; top:4px; bottom:22px; width:2px; background:#ff3b30;
                    pointer-events:none; z-index:5; }
-      .spectrogram-container { height:55vh; min-height:160px; overflow:auto; }
+      /* height set by the layout script: whatever the window leaves after the buttons (JW 2026-11-16) */
+      .spectrogram-container { height:55vh; min-height:140px; overflow:auto; }
+      .bslib-sidebar-layout > .main { padding-top:.6rem; padding-bottom:.6rem; }
+      /* no gap for the warning slot when it is empty; thin padding round the clips (2026-11-16) */
+      #warn_banner:empty { display:none; }
+      .clips-card > .card-body { padding:6px 8px; }
       .clip-resizer { height:14px; margin:2px 0 8px; cursor:row-resize;
                       display:flex; align-items:center; justify-content:center; }
       .clip-resizer::before { content:''; width:70px; height:4px; border-radius:2px; background:#cbd3da; }
       .clip-resizer:hover::before, .clip-resizer.dragging::before { background:#0d6efd; }
-      #notes { height:38px !important; }
+      #notes { height:32px !important; }
       #other_add { height:28px !important; font-size:13px; }
       .other-list { font-size:13px; margin-top:4px; }
       .other-head { font-size:11px; color:#333; }
@@ -181,9 +186,14 @@ ui <- page_sidebar(
                               grid-template-rows:repeat(3, var(--row)) auto; }
         .ctl-notes { grid-column:1 / -1 !important; grid-row:4 !important; max-height:40vh; }
       }
-      .ctl-notes { grid-column:6; grid-row:1 / span 3; min-width:0; overflow-y:auto; }
-      .ctl-notes #notes { height:60px; }
-      .temporal-scroll { overflow-x:auto; }
+      /* Notes / Other species over columns 6-7 in two halves, so nothing needs a scrollbar
+         (JW 2026-11-16): left = notes, Add, quick buttons, COMPLETE; right = the list */
+      .ctl-notes { grid-column:6 / span 2; grid-row:1 / span 3; min-width:0; min-height:0;
+                   display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, 1.15fr); gap:0 10px; }
+      .ctl-notes-left, .ctl-notes-right { min-width:0; min-height:0; overflow-y:auto; }
+      .ctl-notes-left .shiny-input-container { margin-bottom:4px; }
+      .ctl-notes-right .other-list { margin-top:0; }
+      .temporal-scroll { max-height:340px; overflow-y:auto; overflow-x:hidden; }
       #nav_buttons { display:contents; }
       .bslib-sidebar-layout { position:relative; }
       .sidebar-resizer { position:absolute; top:0; bottom:0; width:9px; margin-left:-4px;
@@ -318,6 +328,16 @@ ui <- page_sidebar(
       });
       // O moves the focus into the other-species list: its first row, or the Add box
       // when the clip has no rows (D9). Nothing is saved.
+      // Coverage box: bring the open cell's row into view when it is off-screen (2026-11-16)
+      // (kept and run again when the plot redraws: the image may not be there yet)
+      var covScroll = null;
+      var covRun = function(){ var b = document.querySelector('.temporal-scroll'), m = covScroll;
+        if (!b || !m || !m.n || b.scrollHeight < 60) return;
+        var y = 30 + (m.k - 0.5) * (b.scrollHeight - 34) / m.n;
+        if (y < b.scrollTop + 20 || y > b.scrollTop + b.clientHeight - 20)
+          b.scrollTop = Math.max(0, y - b.clientHeight / 2); };
+      Shiny.addCustomMessageHandler('coverage_scroll', function(m) { covScroll = m; setTimeout(covRun, 300); });
+      $(document).on('shiny:value', function(e) { if (e.name === 'temporal_plot') setTimeout(covRun, 300); });
       Shiny.addCustomMessageHandler('focus_other', function(m) {
         setTimeout(function(){
           var r = $('#other_list .other-row').first();
@@ -390,36 +410,50 @@ ui <- page_sidebar(
           function place(){ handle.style.left = cur() + 'px'; }
           function setW(px){ px = Math.max(280, Math.min(820, px));
             layout.style.setProperty('--_sidebar-width', px + 'px'); handle.style.left = px + 'px'; }
+          // the dragged width is remembered per browser (Phil 2026-11-16)
+          try { var saved = parseInt(localStorage.getItem('aru_validator_sidebar_w')); if (saved) setW(saved); } catch (err) {}
           place();
           handle.addEventListener('mousedown', function(e){ dragging = true; handle.classList.add('dragging');
             document.body.style.userSelect = 'none'; e.preventDefault(); });
           document.addEventListener('mousemove', function(e){ if (!dragging) return;
             setW(e.clientX - layout.getBoundingClientRect().left); });
           document.addEventListener('mouseup', function(){ if (!dragging) return; dragging = false;
-            handle.classList.remove('dragging'); document.body.style.userSelect = ''; });
+            handle.classList.remove('dragging'); document.body.style.userSelect = '';
+            try { localStorage.setItem('aru_validator_sidebar_w', String(cur())); } catch (err) {} });
           window.addEventListener('resize', place);
         }, 350);
       });
-      // Drag the bar to resize the clip window height (moves the buttons up/down).
+      // Page fits the window, no page scroll (JW 2026-11-16): the button rows get a height
+      // from the window size, the clip window takes everything left above them. Dragging the
+      // bar sets the clip height instead and the rows share what is left (40-84 px each).
       $(document).ready(function(){
         setTimeout(function(){
           var handle = document.querySelector('.clip-resizer');
           var cont = document.querySelector('.spectrogram-container');
           if (!handle || !cont) return;
-          var dragging = false;
-          // button rows share the space below the clip window (3 rows, 2 gaps of 8px, 12px margin)
+          var dragging = false, userH = null;
           var fit = function(){
             var cc = document.querySelector('.controls-container'); if (!cc) return;
-            var room = window.innerHeight - (cc.getBoundingClientRect().top + window.scrollY) - 12;
-            cc.style.setProperty('--row-fit', Math.max(0, (room - 16) / 3) + 'px'); };
+            var main = cont.closest('.main');
+            var sY = window.scrollY + (main ? main.scrollTop : 0);
+            var padB = main ? parseFloat(getComputedStyle(main).paddingBottom) || 0 : 0;
+            var bottom = window.innerHeight - padB - 1;                  // usable bottom edge
+            var top = cont.getBoundingClientRect().top + sY;            // clip window top, unscrolled
+            var gap = cc.getBoundingClientRect().top - cont.getBoundingClientRect().bottom;
+            var room = bottom - top - gap;                               // clips + button block
+            var row = userH === null ? Math.min(64, window.innerHeight * 0.07)
+                                     : (room - userH - 16) / 3;
+            cc.style.setProperty('--row-fit', Math.max(40, Math.min(84, row)) + 'px');
+            var clipH = room - cc.getBoundingClientRect().height;        // what the buttons leave
+            if (userH !== null) clipH = Math.min(clipH, userH);
+            cont.style.height = Math.max(140, Math.floor(clipH)) + 'px'; };
           handle.addEventListener('mousedown', function(e){ dragging = true;
             handle.classList.add('dragging'); document.body.style.userSelect = 'none'; e.preventDefault(); });
           document.addEventListener('mousemove', function(e){ if (!dragging) return;
-            var top = cont.getBoundingClientRect().top;
-            var h = Math.max(140, Math.min(window.innerHeight - 120, e.clientY - top));
-            cont.style.height = h + 'px'; fit(); });
+            userH = Math.max(140, e.clientY - cont.getBoundingClientRect().top); fit(); });
           document.addEventListener('mouseup', function(){ if (!dragging) return; dragging = false;
             handle.classList.remove('dragging'); document.body.style.userSelect = ''; fit(); });
+          handle.addEventListener('dblclick', function(){ userH = null; fit(); });   // back to auto
           window.addEventListener('resize', fit);
           fit(); setInterval(fit, 1000);   // the controls render after the data loads
         }, 400);
@@ -429,7 +463,7 @@ ui <- page_sidebar(
   ),
 
   sidebar = sidebar(
-    width = 820,
+    width = 480,                     # drag the divider to change; the browser remembers it
     uiOutput("mode_panel"),
     conditionalPanel("output.data_loaded == true",
       # F5: in occupancy group view the group box and its navigation sit at the top,
@@ -451,7 +485,7 @@ ui <- page_sidebar(
         card(class = "sb-card",
           card_header("Coverage (unit \u00d7 occasion)"),
           card_body(div(class = "temporal-scroll",
-                        plotOutput("temporal_plot", height = "180px",
+                        plotOutput("temporal_plot", height = "auto",   # grows with the units
                                    click = "temporal_click",
                                    hover = hoverOpts("temporal_hover", delay = 150))),
                     div(style = "font-size:11px; color:#333; min-height:15px;",
@@ -467,6 +501,7 @@ ui <- page_sidebar(
         card_header("Progress"),
         card_body(
           uiOutput("summary_table"),
+          uiOutput("other_payoff"),          # was under the Other panel (JW 2026-11-16)
           uiOutput("confidence_legend"),
           conditionalPanel("!(output.is_occupancy == true && input.view_mode == 'group')",
             hr(), uiOutput("group_stats_table"))
@@ -564,15 +599,15 @@ ui <- page_sidebar(
   # ---- main display area ----
   uiOutput("warn_banner"),
   card(
-    full_screen = TRUE,
-    card_header("Clips"),
+    class = "clips-card",
+    full_screen = TRUE,                     # no "Clips" header: the room goes to the clips
     div(class = "spectrogram-container", uiOutput("spectrogram_grid"))
   ),
-  div(class = "clip-resizer", title = "Drag to resize the clip window"),
+  div(class = "clip-resizer", title = "Drag to resize the clip window; double-click to fit it again"),
   # Buttons sit in a 5 x 3 grid, each at a fixed cell (at(row, col)) so nothing shifts
   # while the nav buttons (drawn once a DB is open) are missing; the notes / other-species
-  # panel is column 6 over all three rows; column 7 is space; Quit is column 8, bottom row,
-  # against the right edge (Phil 2026-10-27).
+  # panel is columns 6-7 over all three rows (JW 2026-11-16; column 7 was empty); Quit is
+  # column 8, bottom row, against the right edge (Phil 2026-10-27).
   div(class = "controls-container",
     at(1, 1, actionButton("btn_play", "\u25b6 Play", class = "btn-secondary ctl-btn")),
     uiOutput("nav_buttons"),                                     # row 1, columns 2-3
@@ -606,11 +641,11 @@ ui <- page_sidebar(
     .ip_switch(actionButton("btn_mark_p", "Mark P", class = "ctl-btn",
                  style = "background-color:#9c27b0;border-color:#9c27b0;color:#fff;", title = "Mark remaining as Peeper (Alt+P)")),
     div(class = "ctl-notes",
+      div(class = "ctl-notes-left",
         uiOutput("box_clip"),
         # no browser form history on the free-text boxes (it filled old code combos, JW)
         htmltools::tagQuery(textInput("notes", NULL, placeholder = "Notes..."))$
           find("input")$addAttrs(autocomplete = "off")$allTags(),
-        uiOutput("other_list"),
         div(style = "display:flex; gap:4px; align-items:center;",
             htmltools::tagQuery(textInput("other_add", NULL, placeholder = "Add (e.g. BTNW)"))$
               find("input")$addAttrs(autocomplete = "off", spellcheck = "false")$allTags(),
@@ -620,8 +655,8 @@ ui <- page_sidebar(
           tags$button(type = "button", tabindex = "-1", k, title = paste("Add", k, "as Y"),
             onmousedown = "event.preventDefault();",
             onclick = sprintf("Shiny.setInputValue('other_add_go',{txt:'%s',sid:otherSid(),n:Math.random()},{priority:'event'})", k)))),
-        uiOutput("other_complete"),
-        uiOutput("other_payoff"))
+        uiOutput("other_complete")),
+      div(class = "ctl-notes-right", uiOutput("other_list")))
   )
 )
 
@@ -1653,6 +1688,14 @@ server <- function(input, output, session) {
   output$temporal_plot <- renderPlot({
     req(rv$data_loaded, rv$mode == "occupancy"); rv$classification_counter
     temporal_tiles(rv$groups, rv$unit_order, active = .active_cell())
+  }, height = function() temporal_tiles_height(
+       if (is.null(rv$groups)) 0 else length(unique(rv$groups$unit))))
+  observe({
+    req(rv$data_loaded, rv$mode == "occupancy", rv$groups)
+    a <- .active_cell(); req(a)
+    u <- if (!is.null(rv$unit_order)) rv$unit_order else sort(unique(as.character(rv$groups$unit)))
+    k <- match(a$unit, u); req(!is.na(k))
+    session$sendCustomMessage("coverage_scroll", list(k = k, n = length(u)))
   })
   # F3: hover names the cell; click opens it as a group (same path as the picker).
   output$temporal_hover_label <- renderText({
